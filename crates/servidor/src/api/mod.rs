@@ -29,6 +29,10 @@ mod respaldo;
 pub(crate) mod restauraciones;
 mod servidor_clientes;
 mod sesiones;
+// 16k: las sesiones de la consola de cada cuenta.
+mod sesiones_cuenta;
+// 16h: «Este equipo no llega a esa consola».
+mod no_llega;
 
 pub use cuentas::preparar_codigo_arranque;
 pub(crate) use etiquetas::normalizar_etiqueta;
@@ -255,6 +259,10 @@ pub fn router(st: St) -> Router {
         .route("/api/cuenta/recuperacion", post(cuentas::codigos_nuevos))
         .route("/api/cuenta/notificaciones", get(notificaciones::mias).put(notificaciones::cambiar_mias))
         .route("/api/cuenta/contrasena", put(cuentas::cambiar_contrasena))
+        .route("/api/cuenta/sesiones", get(sesiones_cuenta::listar))
+        .route("/api/cuenta/sesiones/cerrar", post(sesiones_cuenta::cerrar))
+        .route("/api/servidor/sesiones", get(sesiones_cuenta::ver_plazos).put(sesiones_cuenta::poner_plazos))
+        .route("/api/servidor/cuentas/{id}/sesiones/cerrar", post(sesiones_cuenta::cerrar_de_otra))
         .route("/api/invitaciones/aceptar", post(cuentas::aceptar_invitacion))
         // Clientes
         .route("/api/clientes", get(clientes::listar).post(clientes::crear))
@@ -349,6 +357,7 @@ pub fn router(st: St) -> Router {
         .route("/api/clientes/{c}/organizacion", get(organizacion::ver))
         // Plan 0.8.1, C4 (15d): servidores físicos, conjuntos de discos y dónde está cada equipo y destino.
         .route("/api/clientes/{c}/infraestructura", get(crate::infraestructura::ver).put(crate::infraestructura::poner))
+        .route("/api/clientes/{c}/no-llega", get(no_llega::ver).put(no_llega::poner))
         .route("/api/clientes/{c}/datos-comunes/enviadas", post(datos_comunes::enviadas))
         .route("/api/clientes/{c}/datos-comunes/traer", post(datos_comunes::traer))
         .route("/api/clientes/{c}/emparejamientos/{p}", get(equipos::ver_emparejamiento).delete(equipos::cancelar_emparejamiento))
@@ -381,7 +390,13 @@ pub fn router(st: St) -> Router {
 
     let web = match &st.opciones.consola {
         Some(dir) => {
-            Router::new().fallback_service(tower_http::services::ServeDir::new(dir).fallback(tower_http::services::ServeFile::new(dir.join("index.html"))))
+            // 16x (0): con los `.br` y `.gz` de la compilación, si están (sin caché: es para probar).
+            Router::new().fallback_service(
+                tower_http::services::ServeDir::new(dir)
+                    .precompressed_br()
+                    .precompressed_gzip()
+                    .fallback(tower_http::services::ServeFile::new(dir.join("index.html")).precompressed_br().precompressed_gzip()),
+            )
         }
         #[cfg(feature = "consola-integrada")]
         None if crate::consola_integrada::disponible() => Router::new().fallback(crate::consola_integrada::servir),
@@ -394,6 +409,8 @@ pub fn router(st: St) -> Router {
         .merge(web)
         .route("/api/{*resto}", patch(no_existe).get(no_existe).post(no_existe).put(no_existe).delete(no_existe))
         .layer(middleware::from_fn(cuerpo_con_espera))
+        // 16x (7): las respuestas grandes de lectura (informes, panel…), en gzip si se acepta.
+        .layer(middleware::from_fn(crate::comprimir::respuestas))
         .layer(middleware::from_fn_with_state(st.clone(), limite_y_registro))
         .layer(middleware::from_fn_with_state(st.clone(), cabeceras))
         .with_state(st)

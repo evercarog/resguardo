@@ -1602,6 +1602,10 @@ pub const ADMITE: &[&str] = &[
     resguardo_protocolo::datos_cliente::ADMITE_INVENTARIO,
     // 0.8.2 (A5): guarda la infraestructura del cliente (servidores físicos, discos, dónde está cada cosa).
     resguardo_protocolo::datos_cliente::ADMITE_INFRA,
+    // 0.8.3 (16a, 16f): acepta la marca de cada disco y la serie y el inventario del servidor.
+    resguardo_protocolo::datos_cliente::ADMITE_INFRA_FICHA,
+    // 0.8.3 (16b): la operación `archivos_con_error` en la sesión `elegir_carpetas`.
+    crate::sesiones_v2::ADMITE_ARCHIVOS_CON_ERROR,
     // 0.8.2 (C1, 15uu): sus consolas se pueden dejar desde el propio equipo (ventana y
     // terminal, con la clave de administración), y antes les avisa firmado
     // (`POST /api/agente/dejada`).

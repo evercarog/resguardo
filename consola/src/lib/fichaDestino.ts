@@ -168,11 +168,19 @@ export function usosDeDestino(v: DestinoVista, equipos: Equipo[], cliente: strin
       const entra = (v.nube && v.nube.equipo.id === a.id && t.adonde.tipo === "nube" && t.adonde.nube === v.nube.nombre) || (v.zona && v.zona.almacen.id === a.id && t.adonde.tipo === "zona" && t.adonde.carpeta === v.zona.id);
       if (entra) out.push({ tipo: "espejo_entra", texto: `Espejo «${t.nombre.trim() || nombrePorDefecto(t.adonde)}» (${a.nombre})${t.activo ? "" : " · en pausa"}`, equipo: a, href: hrefEspejo(cliente, a.id, t.id), ultima: t.ultima, resultado: t.resultado });
     }
+    // 16j: con trabajos, lo que sale de esta zona, espejo a espejo (la vista por destinos no repite
+    // destino: cuatro espejos a la misma nube contaban como uno).
+    if (v.zona && v.zona.almacen.id === a.id)
+      for (const t of trabajos)
+        if ((t.zona ?? PRINCIPAL) === v.zona.id) {
+          const destino = t.adonde.tipo === "nube" && t.adonde.nube ? `«${t.adonde.nube}»` : t.adonde.tipo === "zona" ? nombreZona(t.adonde.carpeta) : t.adonde.carpeta;
+          out.push({ tipo: "espejo_sale", texto: `Espejo «${t.nombre.trim() || nombrePorDefecto(t.adonde)}»: se refleja en ${destino}${t.activo ? "" : " · en pausa"}`, equipo: a, href: hrefEspejo(cliente, a.id, t.id), ultima: t.ultima, resultado: t.resultado });
+        }
     for (const d of esp.destinos ?? []) {
       const href = `/c/${cliente}/equipos/${a.id}`;
       const entra = !trabajos.length && ((v.nube && v.nube.equipo.id === a.id && d.tipo === "nube" && d.nube === v.nube.nombre) || (v.zona && v.zona.almacen.id === a.id && d.tipo === "zona" && d.carpeta === v.zona.id));
       if (entra) out.push({ tipo: "espejo_entra", texto: `Espejo de ${nombreZona(d.zona)} del almacén ${a.nombre}`, equipo: a, href, ultima: d.ultima, resultado: d.resultado });
-      if (v.zona && v.zona.almacen.id === a.id && (d.zona ?? PRINCIPAL) === v.zona.id)
+      if (!trabajos.length && v.zona && v.zona.almacen.id === a.id && (d.zona ?? PRINCIPAL) === v.zona.id)
         out.push({ tipo: "espejo_sale", texto: `Se refleja en ${nombreEspejo(a, d)}`, equipo: a, href: d.tipo === "nube" && d.nube ? hrefDestino(cliente, claveNube(a.id, d.nube)) : d.tipo === "zona" && d.carpeta ? hrefDestino(cliente, claveZona(a.id, d.carpeta)) : href, ultima: d.ultima, resultado: d.resultado });
     }
   }

@@ -192,7 +192,8 @@ const sinA = sinAnotar(infra, [fisico, vm, otro, { ...otro, id: "pc-02", confirm
   { clave: "carpeta-x", tipo: "local", equipo: null },
   { clave: "d-b2", tipo: "b2" },
 ]);
-igual("equipos y destinos sin anotar (la nube no; una zona hereda el de su almacén; uno sin confirmar, no)", [sinA.equipos.map((e) => e.id), sinA.destinos.map((d) => d.clave)], [["pc-01"], ["carpeta-x"]]);
+// 16g (0.8.3): un equipo que no es máquina virtual ni contenedor (PC-01) ya no cuenta: es su propio equipo.
+igual("equipos y destinos sin anotar (la nube no; una zona hereda el de su almacén; uno sin confirmar, no; un equipo de usuario, no)", [sinA.equipos.map((e) => e.id), sinA.destinos.map((d) => d.clave)], [[], ["carpeta-x"]]);
 igual("sin ningún servidor anotado, no se avisa", sinAnotar(null, [otro], [{ clave: "x", tipo: "local" }]), { equipos: [], destinos: [] });
 
 console.log("\n· A5: en «Lo mismo en todas las consolas»");

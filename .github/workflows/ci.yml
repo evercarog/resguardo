@@ -387,7 +387,11 @@ jobs:
         run: |
           python3 -m pip install --user --quiet cargo-zigbuild
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          sudo apt-get update -qq && sudo apt-get install -y -qq qemu-user-static file
+          sudo apt-get update -qq
+          # En las imágenes nuevas de Ubuntu qemu-user-static ya no existe: lo trae qemu-user.
+          sudo apt-get install -y -qq qemu-user-static file || sudo apt-get install -y -qq qemu-user file
+          Q=$(command -v qemu-aarch64-static || command -v qemu-aarch64)
+          echo "QEMU_ARM64=$Q" >> "$GITHUB_ENV"
       - name: Llave de publicación (sin ella, agente sin actualización automática)
         run: |
           # docs/actualizaciones.md: con el marcador de posición, el agente se compila y se
@@ -404,11 +408,11 @@ jobs:
             file "$D/$b" | tee /dev/stderr | grep -q 'ARM aarch64'
             file "$D/$b" | grep -Eq 'statically linked|static-pie linked' || { echo "$b no es estático"; exit 1; }
           done
-          qemu-aarch64-static "$D/resguardo-server" --ayuda | grep -q -- '--dominio'
-          qemu-aarch64-static "$D/resguardo-agente" --version
+          "$QEMU_ARM64" "$D/resguardo-server" --ayuda | grep -q -- '--dominio'
+          "$QEMU_ARM64" "$D/resguardo-agente" --version
           # El servidor arranca, crea sus datos y responde por HTTPS (con la consola dentro).
           mkdir -p /tmp/rs-arm64
-          qemu-aarch64-static "$D/resguardo-server" --datos /tmp/rs-arm64 --escuchar 127.0.0.1:18443 > /tmp/rs-arm64.log 2>&1 &
+          "$QEMU_ARM64" "$D/resguardo-server" --datos /tmp/rs-arm64 --escuchar 127.0.0.1:18443 > /tmp/rs-arm64.log 2>&1 &
           PID=$!
           for i in $(seq 1 60); do curl -fsSk -o /dev/null https://127.0.0.1:18443/api/servidor && break; sleep 1; done
           curl -fsSk https://127.0.0.1:18443/api/servidor | jq -e '.version and .identidad'
@@ -431,7 +435,7 @@ jobs:
           done
           tar -tzf paquetes-servidor-arm64/resguardo-server-aarch64-linux-musl.tar.gz | grep -q 'preparar-vm.sh'
           tar -tzf paquetes-agente-arm64/resguardo-agente-aarch64-linux-musl.tar.gz | grep -q '^./restic$'
-          qemu-aarch64-static "$D/restic" version | tee /dev/stderr | grep -q '^restic 0\.19\.1 '
+          "$QEMU_ARM64" "$D/restic" version | tee /dev/stderr | grep -q '^restic 0\.19\.1 '
       - uses: actions/upload-artifact@v4
         with:
           name: servidor-linux-aarch64

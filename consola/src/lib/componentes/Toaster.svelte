@@ -41,6 +41,12 @@
     width: min(380px, calc(100vw - 32px));
     pointer-events: none;
   }
+  /* En el móvil, por encima de la barra de abajo del cliente (la misma altura que `--barra-movil`). */
+  @media (max-width: 860px) {
+    :global(html.con-barra-movil) .toaster {
+      bottom: calc(var(--sp-4) + 64px + env(safe-area-inset-bottom));
+    }
+  }
   .toast {
     display: flex;
     align-items: flex-start;

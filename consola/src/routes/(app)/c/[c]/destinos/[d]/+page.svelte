@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ErrorCopia from "$lib/componentes/ErrorCopia.svelte";
   // La página de un destino (como la de un repositorio): una zona de un
   // almacén, un disco o carpeta de un equipo, una nube o un destino suelto del
   // catálogo. Cabecera con su nombre, qué es, dónde está y sus acciones
@@ -85,6 +86,16 @@
   /** Los repositorios distintos que llegan por espejo (uno que llega por dos espejos cuenta una vez). */
   const porEspejo = $derived([...new Map(espejos.flatMap((x) => x.filas.map((f) => [`${x.hace.id}:${f.valor}`, f] as const))).values()]);
   const protegido = $derived(filas.reduce((n, x) => n + (x.tam ?? 0), 0) + porEspejo.reduce((n, x) => n + (x.tam ?? 0), 0));
+  /** 16w: lo que ocupa aquí de verdad: sus repositorios (todas las versiones, comprimidas) y lo que dicen los espejos que ocupan. */
+  const enDiscoAqui = $derived.by(() => {
+    let n: number | null = null;
+    for (const x of filas) {
+      const b = informeDe(ultimos.porEquipo[x.e.id], x.r.id)?.espacio?.en_disco_bytes;
+      if (b != null) n = (n ?? 0) + b;
+    }
+    for (const x of espejos) if (x.trabajo.ocupa?.bytes != null) n = (n ?? 0) + x.trabajo.ocupa.bytes;
+    return n;
+  });
   const usos = $derived(v ? usosDeDestino(v, actual.equipos, c) : []);
   const posibles = $derived(v ? usarEnCopia(v, actual.equipos, c) : []);
   /** Plan 0.7.26 (bloque 4): «Usar en un espejo»: la página de espejos de quien lo haría, con este destino ya elegido. */
@@ -129,6 +140,8 @@
     return TEXTO_TIPO[v.tipo] ?? v.tipo;
   });
   const Icono = $derived(v?.zona ? Server : v?.nube ? Cloud : d?.tipo === "local" ? (d.extraible ? Usb : d.red ? Network : HardDrive) : ["b2", "s3", "nube"].includes(v?.tipo ?? "") ? Cloud : v?.tipo === "rest" || v?.tipo === "sftp" ? Server : Database);
+  /** 16j: una nube (conectada o del catálogo): sin «Dónde está físicamente» ni soporte de equipo. */
+  const esNube = $derived(!!v?.nube || v?.clase === "nube" || clase?.tipo === "nube");
   const mismoEquipo = $derived(d?.tipo === "local" && !d.red && !d.extraible);
 
   let renombrar = $state(false);
@@ -168,7 +181,7 @@
 
     <div class="cifras" role="list" aria-label="Cifras del destino">
       <Cifra icono={Database} etiqueta="Repositorios" valor={numero(filas.length + porEspejo.length)} sub={porEspejo.length ? `${plural(porEspejo.length, "llega", "llegan")} por ${plural(espejos.length, "espejo", "espejos")}` : filas.length ? `de ${plural(new Set(filas.map((x) => x.e.id)).size, "equipo", "equipos")}` : v.clase === "nube" ? "para el espejo del almacén" : "ninguno todavía"} />
-      <Cifra icono={HardDrive} etiqueta="Protegido" valor={protegido ? bytes(protegido) : "—"} sub={filas.length || porEspejo.length ? "lo que ocupan sus versiones" : "sin repositorios"} />
+      <Cifra icono={HardDrive} etiqueta="Protegido" valor={protegido ? bytes(protegido) : "—"} sub={filas.length || porEspejo.length ? (enDiscoAqui != null ? `la última versión de cada uno · aquí ocupan ${bytes(enDiscoAqui)} con su historial` : "lo que ocupan los archivos en la última versión de cada uno") : "sin repositorios"} />
       <Cifra icono={Server} etiqueta="Espacio libre" valor={espacio ? bytes(espacio.libre) : "—"} de={espacio ? `de ${bytes(espacio.total)}` : undefined} sub={espacio ? (espacio.leido ? `medido ${relativo(espacio.leido, reloj.ahora)}` : "lo último que dijo") : v.clase === "nube" || ["b2", "s3"].includes(v.tipo) ? "el proveedor no dice un límite" : "no se sabe todavía"} />
       <Cifra icono={Activity} etiqueta="Lo último" valor={actividad[0] ? relativo(actividad[0].cuando, reloj.ahora) : "—"} sub={actividad[0] ? actividad[0].texto : "nada todavía"} mal={actividad[0]?.tono === "bad"} />
     </div>
@@ -191,9 +204,12 @@
           {/if}
           {#if v.zona?.carpeta}<dt>Carpeta</dt><dd><Copiable texto={v.zona.carpeta} que="la carpeta" /></dd>{/if}
           {#if v.destino?.tipo === "local" && v.destino.carpeta}<dt>Carpeta</dt><dd><Copiable texto={v.destino.carpeta} que="la carpeta" /></dd>{/if}
+          <!-- 16j: una nube no tiene «ubicación física» que anotar. -->
+          {#if !esNube}
           <dt>Dónde está físicamente</dt>
           <!-- 0.8.2 (A1): «Anotar» lleva a Ajustes → Infraestructura con este destino ya elegido. -->
           <dd>{#if fisico}<a class="link" href="/c/{c}/ajustes/infraestructura?destino={encodeURIComponent(v.clave)}">{fisico}</a>{:else}<span class="faint">Sin anotar</span>{#if puedeAnotar}<span class="faint"> · </span><a class="link" href="/c/{c}/ajustes/infraestructura?destino={encodeURIComponent(v.clave)}">Anotar</a>{/if}{/if}</dd>
+          {/if}
           {#if marca?.sistemaArchivos}<dt>Sistema de archivos</dt><dd><span class="pastilla mono">{marca.sistemaArchivos}</span> <span class="faint">solo un dato</span></dd>{/if}
           {#if entorno}<dt>Entorno</dt><dd>{entorno}</dd>{/if}
         </dl>
@@ -235,8 +251,10 @@
                 <span class="faint">Avisa a los {clase.aisladoDias} días · {quien(clase.aislado !== deducida?.aislado)}.</span>
               {:else}No <span class="faint">· {quien(clase.aislado !== deducida?.aislado)}</span>{/if}
             </dd>
-            <dt>Soporte</dt>
-            <dd>{atrib?.soporte ? `«${atrib.soporte}» (marcado)` : "Su equipo y su disco"}</dd>
+            {#if !esNube || atrib?.soporte}
+              <dt>Soporte</dt>
+              <dd>{atrib?.soporte ? `«${atrib.soporte}» (marcado)` : "Su equipo y su disco"}</dd>
+            {/if}
           </dl>
           <!-- Plan 0.8.0, D1: su sede (la nube no es sede: siempre fuera). -->
           {#if actual.organizacion.sedes.length && clase.tipo !== "nube"}
@@ -269,7 +287,7 @@
                 <Chip pequeno tono={x.estado === "error" ? "bad" : x.estado === "ok" ? "ok" : x.estado === "pausado" ? "paused" : "neutral"} texto={x.estado === "error" ? "Falló" : x.estado === "ok" ? "Al día" : x.estado === "pausado" ? "En pausa" : "Todavía no"} />
                 <ArrowRight size={14} class="flecha" />
               </a>
-              {#if x.estado === "error" && x.trabajo.resultado}<p class="faint mal-espejo">{x.trabajo.resultado.replace(/^ERROR:\s*/, "")}</p>{/if}
+              {#if x.estado === "error" && x.trabajo.resultado}<div class="faint mal-espejo"><ErrorCopia mensaje={x.trabajo.resultado.replace(/^ERROR:\s*/, "")} /></div>{/if}
               {#if x.filas.length}
                 <ul class="lista-d dentro">
                   {#each x.filas as f (f.valor)}
@@ -424,6 +442,8 @@
   }
   .dos > .card {
     display: grid;
+    /* 16r: sin esto, la columna toma el ancho de su contenido y a 375 px se sale. */
+    grid-template-columns: minmax(0, 1fr);
     align-content: start;
     gap: var(--sp-3);
   }

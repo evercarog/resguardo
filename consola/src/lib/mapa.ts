@@ -78,7 +78,7 @@ export interface NodoMapa {
   /** 0.8.1 (C2, 15rr): un grupo (o una píldora de un grupo) se despliega con un clic: su id. */
   grupo?: string;
   /** 0.8.1 (15rr): lo que hay en un grupo, para la lista al pasar por él. */
-  miembros?: { tipo: "equipo" | "repo"; nombre: string; detalle?: string; tono: Tono; estado: string; href?: string }[];
+  miembros?: { tipo: "equipo" | "repo" | "espejo"; nombre: string; detalle?: string; tono: Tono; estado: string; href?: string }[];
   /** 0.8.1 (15l, capa «Sedes»): su sede (la nube, ninguna: va aparte). */
   sede?: { id: string; nombre: string } | null;
   /** 0.8.1 (15l): está en la nube (o en un servidor de fuera): va en el recuadro «Nube». */
@@ -106,6 +106,8 @@ export interface AristaMapa {
   etiqueta?: string;
   /** 0.8.1 (15cc): lo que lleva mientras está en marcha («45 %», «en cola»), en una píldora sobre el trazo. */
   progreso?: string;
+  /** 16j: un espejo: el nombre de los espejos que lleva esta línea (al pasar el ratón). */
+  nombres?: string[];
 }
 
 export interface Mapa {
@@ -174,6 +176,60 @@ export interface OpcionesMapa {
 }
 
 const DIA = 86_400_000;
+
+/** 16j: un espejo del almacén, de un trabajo (si el agente los manda) o de la vista de antes por destinos. */
+export interface EspejoMapa {
+  tipo: "carpeta" | "nube" | "zona";
+  carpeta?: string | null;
+  nube?: string | null;
+  zona?: string | null;
+  repos?: string[] | null;
+  ultima?: string | null;
+  resultado?: string | null;
+  bloqueo?: boolean | null;
+  trabajo?: string | null;
+  nombre?: string | null;
+  pausado?: boolean;
+  /** Cuándo, corto: «cada noche a las 02:00», «con su horario». */
+  cuando: string;
+}
+
+const conHorario = (h: { horas?: string[] | null; reglas?: unknown[] | null } | null | undefined) => !!h && (!!h.horas?.length || !!h.reglas?.length);
+
+type EspejoResumen = NonNullable<NonNullable<NonNullable<Equipo["resumen"]>["guarda_copias"]>["espejo"]>;
+
+/**
+ * 16j: los espejos del almacén uno a uno. Con trabajos, de los trabajos: la vista por destinos
+ * que manda el agente no repite destino (cuatro espejos a la misma nube salen como uno solo,
+ * con los repositorios del primero), así que con ella el mapa perdía líneas y la zona contaba de menos.
+ */
+export function espejosDelAlmacen(esp: EspejoResumen): EspejoMapa[] {
+  const ts = esp.trabajos ?? [];
+  if (ts.length)
+    return ts.map((t) => {
+      const vista = esp.destinos?.find((d) => d.trabajo === t.id);
+      return {
+        tipo: t.adonde.tipo,
+        carpeta: t.adonde.carpeta,
+        nube: t.adonde.nube ?? null,
+        zona: t.zona ?? null,
+        repos: t.que.tipo === "todos" ? null : t.que.tipo === "equipos" ? t.que.equipos : t.que.repos,
+        ultima: t.ultima ?? null,
+        resultado: t.resultado ?? null,
+        bloqueo: t.bloqueo ?? null,
+        trabajo: t.id,
+        nombre: t.nombre?.trim() || null,
+        pausado: !t.activo,
+        cuando: vista ? cuandoCorto(vista, esp.hora) : conHorario(t.cuando.horario) ? (t.cuando.tras_copia ? "con su horario y tras cada copia" : "con su horario") : t.cuando.tras_copia ? "tras cada copia" : "en cadena",
+      };
+    });
+  const destinos = esp.destinos?.length ? esp.destinos : [{ tipo: "carpeta" as const, carpeta: "Espejo", ultima: esp.ultima, resultado: esp.resultado }];
+  return destinos.map((d) => ({ ...d, trabajo: "trabajo" in d ? (d.trabajo ?? null) : null, cuando: cuandoCorto(d, esp.hora) }));
+}
+
+/** 16j: un nodo por destino del espejo: la nube una vez (aunque cada espejo use otra carpeta dentro), cada zona y cada carpeta. */
+export const nodoEspejo = (almacen: string, d: Pick<EspejoMapa, "tipo" | "carpeta" | "nube">) =>
+  d.tipo === "nube" ? `es:${almacen}:n:${d.nube ?? ""}` : d.tipo === "zona" ? `es:${almacen}:z:${d.carpeta ?? ""}` : `es:${almacen}:c:${d.carpeta ?? ""}`;
 const TIPO_DESTINO: Record<string, string> = NOMBRE_TIPO_DESTINO;
 const minus = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
 
@@ -475,11 +531,12 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
         (dd
           ? nodoDestino(p, { r: { ...x.r, destino: dd.id }, destino: k.clave, almacen: k.almacen, fuera: k.fuera })
           : poner({ id: k.clave, tipo: "destino", col: 2, nombre: dv.destino ?? "Otro destino", sub: "Destino", tono: "neutral", estado: "Sin copias todavía", ultima: null, icono: "servidor" }));
-      // 15k: una derivada que llega a un almacén está en él con su carpeta (`<repo>-<id>`): los
-      // espejos que la copian cuelgan también del repositorio de origen.
+      // 15k: una derivada que llega a un almacén está en él con su carpeta (`<repo>-<id>`). 16j: los
+      // espejos que la copian salen de su destino (la flecha sigue: repositorio → derivada → espejo),
+      // no del repositorio de origen, que guarda en otro sitio.
       if (k.almacen && dd) {
         const en = enAlmacenDe({ ...x.r, ruta: `${x.r.id}-${dv.id}` }, dd, k.almacen);
-        if (en) anotar(k.almacen.id, pildora.id, en);
+        if (en) anotar(k.almacen.id, destinoNodo.id, en);
       }
       const r = inf?.derivadas?.find((y) => y.id === dv.id);
       const enMarcha = vivo(e.id, x.r.id, "derivada", dv.id);
@@ -647,30 +704,46 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
     const alm = todos.find((e) => `al:${e.id}` === n.id);
     const esp = alm?.resumen?.guarda_copias?.espejo;
     if (!alm || !esp) continue;
-    const destinos = esp.destinos?.length ? esp.destinos : [{ tipo: "carpeta" as const, carpeta: "Espejo", ultima: esp.ultima, resultado: esp.resultado }];
+    const destinos = espejosDelAlmacen(esp);
     n.sub = cuandoCortoEspejo(esp).startsWith("cada noche") ? `Almacén · se refleja cada noche` : `Almacén · con espejo`;
-    destinos.forEach((d, i) => {
+    /** 16j: cuántos espejos llegan a cada nodo (la nube una sola vez, aunque le lleguen cuatro). */
+    const cuantos = new Map<string, number>();
+    for (const d of destinos) cuantos.set(nodoEspejo(alm.id, d), (cuantos.get(nodoEspejo(alm.id, d)) ?? 0) + 1);
+    destinos.forEach((d) => {
       const mal = resultadoConError(d.resultado);
       // 15cc: un espejo en marcha (su trabajo, del progreso del almacén) se anima con su porcentaje.
-      const trabajo = "trabajo" in d ? d.trabajo : null;
+      const trabajo = d.trabajo;
       const enMarcha = trabajo ? vivo(alm.id, trabajo, "espejo") : null;
-      const tono: Tono = enMarcha ? "info" : mal ? "bad" : d.ultima ? (Date.parse(d.ultima) < ahora - 2 * DIA ? "warn" : "ok") : "neutral";
+      const tono: Tono = enMarcha ? "info" : mal ? "bad" : d.pausado ? "neutral" : d.ultima ? (Date.parse(d.ultima) < ahora - 2 * DIA ? "warn" : "ok") : "neutral";
+      const estado = enMarcha ?? (mal ? "Falló" : d.pausado ? "En pausa" : tono === "warn" ? "Atrasado" : tono === "ok" ? "Al día" : "Programado");
       const nube = d.tipo === "nube";
+      const id = nodoEspejo(alm.id, d);
+      const varios = (cuantos.get(id) ?? 1) > 1;
+      const ya = nodos.get(id);
       const e = poner({
-        id: `es:${alm.id}:${i}`,
+        id,
         tipo: "espejo",
         col: 3,
         // Tarea 7d.2: a otra zona del almacén, con el nombre de la zona.
         nombre: (nube ? d.nube : d.tipo === "zona" ? (zonasDe(alm).find((z) => z.id === d.carpeta)?.nombre ?? d.carpeta) : d.carpeta) ?? "Espejo",
-        sub: `Espejo · ${cuandoCorto(d, esp.hora)}`,
+        sub: varios ? `${plural(cuantos.get(id)!, "espejo", "espejos")} llegan aquí` : `Espejo · ${d.cuando}`,
         tono,
-        estado: enMarcha ?? (mal ? "Falló" : tono === "warn" ? "Atrasado" : tono === "ok" ? "Al día" : "Programado"),
+        estado,
         ultima: d.ultima ?? null,
         // Una nube o una zona tienen su página; una carpeta del espejo, no: la página del espejo (14i) o la ficha del almacén.
-        href: nube && d.nube ? hrefDestino(c, claveNube(alm.id, d.nube)) : d.tipo === "zona" && d.carpeta ? hrefDestino(c, claveZona(alm.id, d.carpeta)) : trabajo ? hrefEspejo(c, alm.id, trabajo) : `/c/${c}/equipos/${alm.id}`,
+        href: nube && d.nube ? hrefDestino(c, claveNube(alm.id, d.nube)) : d.tipo === "zona" && d.carpeta ? hrefDestino(c, claveZona(alm.id, d.carpeta)) : trabajo && !varios ? hrefEspejo(c, alm.id, trabajo) : `/c/${c}/equipos/${alm.id}`,
         icono: nube ? (/dropbox/i.test(d.nube ?? "") ? "dropbox" : "nube") : "disco",
         vivo: enMarcha,
       });
+      // 16j: el nodo de un destino con varios espejos dice lo peor de ellos y la última subida de cualquiera.
+      if (ya) {
+        if (PESO[tono] < PESO[e.tono] || tono === "info") Object.assign(e, { tono, estado });
+        if (d.ultima && (!e.ultima || d.ultima > e.ultima)) e.ultima = d.ultima;
+        if (enMarcha) e.vivo = enMarcha;
+      }
+      // 16j: al pasar por él, qué espejos le llegan (por su nombre) y cómo va cada uno.
+      if (varios)
+        e.miembros = [...(e.miembros ?? []), { tipo: "espejo", nombre: d.nombre ?? (nube ? `Espejo a «${d.nube}»` : "Espejo"), detalle: d.cuando, tono, estado, href: trabajo ? hrefEspejo(c, alm.id, trabajo) : undefined }];
       const tipoNube = (alm.resumen?.guarda_copias?.nubes ?? []).find((x) => x.nombre === d.nube)?.tipo ?? (/dropbox/i.test(d.nube ?? "") ? "dropbox" : "");
       tipoNodo.set(
         e.id,
@@ -685,16 +758,30 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
       // selección o de otra zona, de los repositorios que copia, con su estado. 15m (punto 5): si no se
       // reconoce ninguno de los suyos (p. ej. carpetas antiguas `<uuid>/<repo>` o de equipos que no
       // están aquí), sale igual del almacén, con una marca: no desaparece.
+      // 16j: con trabajos, cada espejo con su selección (la vista por destinos solo traía la del primero).
       const todo = !Array.isArray(d.repos) && (d.zona ?? PRINCIPAL) === PRINCIPAL;
       const vistos = enAlmacenes.get(alm.id) ?? [];
       const desde = todo ? [] : vistos.filter((y) => y.en.some((en) => entraEnEspejo(d, en))).map((y) => y.pildora);
-      let de = todo || !vistos.length ? [n.id] : desde;
-      if (!de.length) {
-        de = [n.id];
+      const de = desde.length ? desde : [n.id];
+      if (!desde.length && !todo && vistos.length) {
         e.sinReconocer = true;
         e.aviso = "No sé de qué repositorios es";
       }
-      for (const x of de) unir({ id: `${x}>${e.id}`, de: x, a: e.id, tipo: "espejo", tono, vivo: !!enMarcha, etiqueta: enMarcha ? undefined : frescura(tono, e.ultima, ahora), progreso: enMarcha ? progresoCorto(enMarcha) : undefined });
+      const etiqueta = (t: Tono, u: string | null | undefined) => {
+        const f = enMarcha ? undefined : frescura(t, u ?? null, ahora);
+        return varios && d.nombre ? [d.nombre, f].filter(Boolean).join(" · ") : f;
+      };
+      for (const x of de) {
+        const aid = `${x}>${e.id}`;
+        const previa = aristas.find((y) => y.id === aid);
+        // Un repositorio que llega por dos espejos al mismo sitio: una línea, con lo peor de los dos.
+        if (previa) {
+          if (PESO[tono] < PESO[previa.tono] || enMarcha) Object.assign(previa, { tono, vivo: !!enMarcha || previa.vivo, etiqueta: etiqueta(tono, d.ultima), progreso: enMarcha ? progresoCorto(enMarcha) : previa.progreso });
+          if (d.nombre && !previa.nombres?.includes(d.nombre)) previa.nombres = [...(previa.nombres ?? []), d.nombre];
+          continue;
+        }
+        unir({ id: aid, de: x, a: e.id, tipo: "espejo", tono, vivo: !!enMarcha, etiqueta: etiqueta(tono, d.ultima), progreso: enMarcha ? progresoCorto(enMarcha) : undefined, ...(d.nombre ? { nombres: [d.nombre] } : {}) });
+      }
     });
   }
 
@@ -812,9 +899,9 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
       .map((p) => {
         const destinos = aristas.filter((a) => a.de === p.id).map((a) => ({ a, n: por(a.a) }));
         const guarda = destinos.filter((x) => x.a.tipo === "guarda").map((x) => x.n.nombre);
-        const ext = destinos.filter((x) => x.a.tipo === "externa").map((x) => (x.n.nombre === "Copia derivada" ? `copia derivada (${enFrase(x.n, ahora)})` : `copia derivada a ${x.n.nombre} (${enFrase(x.n, ahora)})`));
-        const der = destinos.filter((x) => x.a.tipo === "derivada").map((x) => `después, una copia derivada a ${x.n.nombre}${x.a.etiqueta ? ` (${x.a.etiqueta})` : ""}`);
-        const esp = destinos.filter((x) => x.a.tipo === "espejo" && x.n.tipo === "espejo").map((x) => `espejo en ${x.n.nombre} (${enFrase(x.n, ahora)})`);
+        const ext = destinos.filter((x) => x.a.tipo === "externa").map((x) => (x.n.nombre === "Copia derivada" ? `una copia hecha a partir de esta (${enFrase(x.n, ahora)})` : `una copia hecha a partir de esta en ${x.n.nombre} (${enFrase(x.n, ahora)})`));
+        const der = destinos.filter((x) => x.a.tipo === "derivada").map((x) => `después, una copia hecha a partir de esta en ${x.n.nombre}${x.a.etiqueta ? ` (${x.a.etiqueta})` : ""}`);
+        const esp = destinos.filter((x) => x.a.tipo === "espejo" && x.n.tipo === "espejo").map((x) => `otra copia igual en ${x.n.nombre} (${enFrase(x.n, ahora)})`);
         const mismo = p.aviso || destinos.some((x) => x.a.tipo === "guarda" && x.n.aviso) ? ", en el mismo equipo que protege" : "";
         const mas = [...ext, ...esp, ...der];
         return `«${p.nombre}» a ${lista(guarda) || "ningún destino"} (${enFrase(p, ahora)}${mismo})${mas.length ? `, con ${lista(mas)}` : ""}`;
@@ -826,7 +913,7 @@ export function construirMapa(equipos: Equipo[], informes: Record<string, Inform
     const esp = aristas.filter((a) => a.de === n.id && a.tipo === "espejo").map((a) => por(a.a));
     const fuera = esp.filter((x) => x.tipo === "fuera");
     const reales = esp.filter((x) => x.tipo !== "fuera");
-    if (reales.length) frases.push(`${n.nombre} se refleja en ${lista(reales.map((x) => `${x.nombre} (${enFrase(x, ahora)}${x.sinReconocer ? "; no se sabe de qué repositorios es" : ""})`))}.`);
+    if (reales.length) frases.push(`${n.nombre} tiene otra copia igual en ${lista(reales.map((x) => `${x.nombre} (${enFrase(x, ahora)}${x.sinReconocer ? "; no se sabe de qué repositorios es" : ""})`))}.`);
     if (fuera.length) frases.push(`${n.nombre} es un almacén que no está en esta consola: sus espejos no se ven aquí (${minus(fuera[0].estado)}).`);
   }
 

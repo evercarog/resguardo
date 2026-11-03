@@ -4,7 +4,7 @@
 // y, del informe detallado de su repositorio, solo sus vueltas y versiones.
 // Sin informe detallado, la página sigue funcionando con el resumen.
 import type { CopiaResumen, EjecucionInforme, Informe, RepoInforme, MovilEquipo } from "./tipos";
-import type { Tono } from "./salud";
+import { atrasadaPorHorario, MARGEN_ATRASO, type Tono } from "./salud";
 import { cuandoFrase, horarioEnFrase, lista, plural, relativo } from "./formato";
 import { informeDe } from "./repo";
 import { proximaVez, reglasDe, ultimaVez } from "./horario";
@@ -29,7 +29,9 @@ export function proximaDe(k: CopiaResumen, informe: Informe | null | undefined, 
   // Plan 0.8.0, F1: una completada o solo a mano no vuelve a tocar sola.
   if (k.completada || k.a_mano) return null;
   const dicha = k.proxima ?? informe?.datos.proximas?.[k.id];
-  if (dicha !== undefined) return dicha;
+  // 16y: lo que dijo el equipo vale mientras no haya pasado; con el equipo desconectado se queda vieja y se calcula del horario.
+  if (dicha === null) return null;
+  if (dicha !== undefined && Date.parse(dicha) > ahora - MARGEN) return dicha;
   if (k.activa === false) return null;
   const t = proximaProgramada(k.horario, ahora);
   return t == null ? null : new Date(t).toISOString();
@@ -92,11 +94,11 @@ export function proximaProgramada(horario: CopiaResumen["horario"], ahora = Date
 }
 
 /** Margen antes de llamar atrasada a una copia (lo que puede tardar en empezar y terminar). */
-const MARGEN = 2 * 3600_000;
+const MARGEN = MARGEN_ATRASO;
 
 /**
- * ¿Atrasada? Activa, sin pausa, y desde su última hora programada (con margen)
- * no ha terminado ninguna vuelta. Una copia que nunca se hizo no cuenta (no se
+ * ¿Atrasada? Activa, sin pausa, y desde la última hora programada que pasó
+ * hace más del margen no ha terminado ninguna vuelta. Una copia que nunca se hizo no cuenta (no se
  * sabe desde cuándo existe): sale como «Sin copias todavía».
  */
 export function atrasada(k: CopiaResumen, vuelta: Vuelta | null, pausada: boolean, ahora = Date.now(), movil?: MovilEquipo | null): boolean {
@@ -104,9 +106,10 @@ export function atrasada(k: CopiaResumen, vuelta: Vuelta | null, pausada: boolea
   if (k.activa === false || pausada || !vuelta || k.completada || k.a_mano) return false;
   // 15ii: un equipo que sale de la oficina solo va atrasado pasado su margen (sin copia).
   if (movil?.sale_oficina) return ahora - Date.parse(vuelta.cuando) > margenMovil(movil) * 86_400_000;
-  const slot = ultimaProgramada(k.horario, ahora);
-  if (slot == null || slot > ahora - MARGEN) return false;
-  return Date.parse(vuelta.cuando) < slot;
+  // 16y: la última hora programada que pasó hace más del margen (no la última sin más: con un horario
+  // cada hora, esa siempre es de hace menos de 2 h y la copia nunca salía atrasada). La misma regla
+  // que `copiaAtrasada` (Estado), en lib/salud.ts.
+  return atrasadaPorHorario(k.horario, vuelta.cuando, ahora) ?? false;
 }
 
 /** 15ii: los días de margen de un equipo que sale de la oficina (7 sin decirlo). */

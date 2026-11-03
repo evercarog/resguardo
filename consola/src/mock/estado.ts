@@ -6,6 +6,7 @@
 import type { SistemaEquipo } from "../lib/datosBasicos";
 import { informeRepo, type OpcionesHistorial } from "./historial";
 import { sembrarOtrosClientes } from "./otrosClientes";
+import { equiposGrande, sembrarGrande } from "./grande";
 import { randomUUID, createHash } from "node:crypto";
 import { argon2id } from "hash-wasm";
 import { ed25519, x25519 } from "@noble/curves/ed25519.js";
@@ -655,7 +656,7 @@ export async function sembrar(vacio = false) {
         // Tarea 7 (parte B): copias en cadena, derivadas con filtros y nubes en el propio equipo.
         // Plan 0.7.26 (bloque 3): «Después de la anterior» aunque falle y con retraso.
         // 0.7.26 (bloque 8): guarda los datos comunes del cliente (colores, catálogo, plantillas).
-        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "inicio_despues", "datos_cliente", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "solo_destino", "nombres_legibles", "comprobar_contrasena", "aprobar_en_equipo", "termina", "comentarios_version", "conservar_version", "retencion_por_dia", "limite_franjas", "sedes", "verificar_volcado", "prueba_espejo", "grupos_exclusiones", "notas_comunes", "sqlserver_todas", "parar", "sin_suspension", "quitar_vacio", "retencion_derivada", "nombre_copia", "etiquetas_copia", "grupos_en_copias", "repos_sueltos", "equipos_moviles", "apagar_al_terminar", "restaurar_excluir", "ajustes_comunes", "recuperar_en_equipo", "restaurar_espejo_equipo", "pruebas_comunes", "inventario_comun", "infra_comun"],
+        admite: ["retencion_plazos", "verificacion_auto", "almacen_propio", "consolas_multiples", "verificacion_horario", "retencion_almacen_horario", "externa_existente", "ordenes_en_espera", "cadenas", "derivadas", "filtros", "nube_equipo", "repo_en_nube", "datos_equipo", "quitar_destino", "nube_revocar", "inicio_despues", "datos_cliente", "restaurar_carpeta", "restaurar_desde", "restauracion_real", "solo_destino", "nombres_legibles", "comprobar_contrasena", "aprobar_en_equipo", "termina", "comentarios_version", "conservar_version", "retencion_por_dia", "limite_franjas", "sedes", "verificar_volcado", "prueba_espejo", "grupos_exclusiones", "notas_comunes", "sqlserver_todas", "parar", "sin_suspension", "quitar_vacio", "retencion_derivada", "nombre_copia", "etiquetas_copia", "grupos_en_copias", "repos_sueltos", "equipos_moviles", "apagar_al_terminar", "restaurar_excluir", "ajustes_comunes", "recuperar_en_equipo", "restaurar_espejo_equipo", "pruebas_comunes", "inventario_comun", "infra_comun", "infra_ficha", "archivos_con_error"],
         // v1.56: el nombre lo puso la consola en línea (lo guarda el equipo: igual en todas sus consolas).
         datos_equipo: { nombre: { valor: "CAJA-1", cuando: hace(60 * 24), consola: "Consola en línea", esta: false, por: "Bruno" } },
         nubes: [{ nombre: "Dropbox Caja", tipo: "dropbox" }],
@@ -798,6 +799,8 @@ export async function sembrar(vacio = false) {
   for (const k of portatil.informes[0]?.datos.copias ?? []) k.cuando = hace(60 * 54);
   enriquecer(servidorAltamar, { externa: true, medioAnadido: 900_000_000, recortado: true });
   enriquecer(surCaja, { externa: true, medioAnadido: 25_000_000 });
+  // 0.8.3 (16b): la última copia de «Ventas» con archivos que no se pudieron leer (para «Ver los archivos»).
+  if (surCaja.informes[0]) for (const k of surCaja.informes[0].datos.copias ?? []) if (k.id === "ventas") Object.assign(k, { estado: "aviso", mensaje: "4 archivos no se pudieron leer." });
   enriquecer(archivos, { externa: false, soloAnadir: false, medioAnadido: 650_000_000, local: { unidad: "D:" } });
   if (archivos.informes[0]) archivos.informes[0].datos.version = archivos.version_agente;
   archivos.etiquetas = ["Servidores"];
@@ -874,6 +877,15 @@ export async function sembrar(vacio = false) {
   auditar(propio.id, ana.id, "cliente.crear", "Propio", null, t(60 * 24 * 12));
   // v1.38: dos clientes más (uno de Ana y otro que no es suyo), para «Todos los clientes».
   await sembrarOtrosClientes({ estado, crearEquipo, kcfgDe, ana, marta, sal, claveAdmin: DEMO.claveAdmin, contrasenaRepo: DEMO.contrasenaRepo });
+  // 16q: con MOCK_EQUIPOS=200, un cliente grande para medir la consola (mock/grande.ts).
+  const n = equiposGrande();
+  if (n) {
+    const salGrande = sal();
+    const verificadorGrande = verificador(await argon2(utf8(DEMO.claveAdmin), Uint8Array.from(Buffer.from(salGrande, "base64"))));
+    const g = await sembrarGrande({ estado, crearEquipo, kcfgDe, ana, sal, contrasenaRepo: DEMO.contrasenaRepo, salVerificador: { sal: salGrande, verificador: verificadorGrande } }, n);
+    console.log(`
+  Cliente grande «${g.cliente.nombre}»: ${g.equipos} equipos y ${g.repositorios} repositorios.`);
+  }
 }
 
 /**

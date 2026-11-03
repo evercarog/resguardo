@@ -8,11 +8,11 @@
   // después, todo lo de las copias junto (regla 3-2-1-1-0 y mapa), la lista de
   // las órdenes que esperan, la salud de cada equipo con sus 14 días, los
   // repositorios y cuánto se guarda en cada destino con su tendencia.
-  import { Archive, CalendarClock, ChevronRight, CircleAlert, CircleCheck, Clock, Cloud, Database, HardDrive, Lock, LockKeyhole, Monitor, Plus, Server, ShieldCheck, TriangleAlert, X } from "@lucide/svelte";
+  import { Archive, CalendarClock, ChevronRight, CircleAlert, CircleCheck, Clock, Cloud, Database, HardDrive, Lock, LockKeyhole, Monitor, Plus, Server, ShieldCheck, TriangleAlert, X, ListChecks, Filter } from "@lucide/svelte";
   import Anuncio from "$lib/componentes/Anuncio.svelte";
   import { actual, puede, reloj } from "$lib/estado.svelte";
   import { bytes, cuandoFrase, cuentaAtras, fechaLarga, numero, plural, relativo } from "$lib/formato";
-  import { almacenes as almacenesDe, proximaDeTodos, ultimas24h } from "$lib/panel";
+  import { almacenes as almacenesDe, espacioTotal, fraseEnDisco, proximaDeTodos, ultimas24h } from "$lib/panel";
   import { cargarInformes, ultimos } from "$lib/informes.svelte";
   import { copiaAtrasada, PESO, saludEquipo, sinDuplicados, type Tono } from "$lib/salud";
   import type { Equipo } from "$lib/tipos";
@@ -20,8 +20,10 @@
   import Ayuda from "$lib/componentes/Ayuda.svelte";
   import TarjetaRepo from "$lib/componentes/repo/TarjetaRepo.svelte";
   import Esqueleto from "$lib/componentes/Esqueleto.svelte";
-  import FiltroEtiquetas from "$lib/componentes/FiltroEtiquetas.svelte";
-  import { agruparPorEtiqueta, filtroEtiqueta, gruposPorEtiqueta, pasaFiltro } from "$lib/etiquetas.svelte";
+  import BarraFiltros from "$lib/componentes/BarraFiltros.svelte";
+  import { agruparPorEtiqueta, gruposPorEtiqueta } from "$lib/etiquetas.svelte";
+  import { contextoFiltros, filtrosEquipos, nombresFiltros } from "$lib/filtrosEquipos.svelte";
+  import { chipsDe, hayFiltros, pasaFiltros, vacios } from "$lib/filtrosEquipos";
   import EtiquetaChip from "$lib/componentes/EtiquetaChip.svelte";
   import TarjetaEquipo from "$lib/componentes/TarjetaEquipo.svelte";
   import Sparkline from "$lib/componentes/Sparkline.svelte";
@@ -30,6 +32,7 @@
   import AvisoSinAnotar from "$lib/componentes/infra/AvisoSinAnotar.svelte";
   import PrimerosPasos from "$lib/componentes/PrimerosPasos.svelte";
   import OrdenDialog from "$lib/componentes/OrdenDialog.svelte";
+  import ComprobarTodo from "$lib/componentes/ComprobarTodo.svelte";
   import Tiempo from "$lib/componentes/Tiempo.svelte";
   import Vacio from "$lib/componentes/Vacio.svelte";
   import MapaProteccion from "$lib/componentes/mapa/MapaProteccion.svelte";
@@ -42,24 +45,26 @@
   // Tarea 8: cuántas copias cumplen la regla 3-2-1-1-0 (y las que dejaron de cumplir, sin urgencia).
   import ReglaCliente from "$lib/componentes/regla/ReglaCliente.svelte";
 
-  interface Urgente {
-    tono: Tono;
-    texto: string;
-    /** Quién (el equipo) y qué le pasa, por separado. */
-    titulo?: string;
-    detalle?: string;
-    accion?: { texto: string; href?: string; orden?: { equipo: Equipo; repo: string; copia: string; nombre: string } };
-  }
+  import { agruparUrgentes, estadoDeGrupo, titularEstado, ultimaPrueba, PRUEBA_VALE_DIAS, type Urgente } from "$lib/urgentes";
+  import { catalogoDe } from "$lib/catalogoDestinos.svelte";
+  import { listaFuncionales } from "$lib/funcionales.svelte";
+  import { reglasDelCliente } from "$lib/regla321";
 
   const c = $derived(actual.id);
-  // Con una etiqueta elegida (Equipos, Avisos y Estado comparten el filtro), solo sus equipos.
+  // 16e: con filtros (Equipos y Estado comparten la barra), solo sus equipos.
   // Sin los duplicados sin confirmar (la misma máquina, una vez; se quitan desde Equipos).
-  const delFiltro = $derived(sinDuplicados(actual.equipos).filter((e) => pasaFiltro(e, filtroEtiqueta.valor)));
+  const sinRepetir = $derived(sinDuplicados(actual.equipos));
+  const conFiltros = $derived(hayFiltros(filtrosEquipos.valor));
+  const delFiltro = $derived.by(() => {
+    const f = filtrosEquipos.valor;
+    const ctx = contextoFiltros();
+    return sinRepetir.filter((e) => pasaFiltros(e, f, ctx, reloj.ahora));
+  });
   const equipos = $derived([...delFiltro].sort((a, b) => PESO[saludEquipo(a, reloj.ahora).tono] - PESO[saludEquipo(b, reloj.ahora).tono] || a.nombre.localeCompare(b.nombre)));
   const saludes = $derived(delFiltro.map((e) => saludEquipo(e, reloj.ahora)));
   // v1.52: agrupados por etiqueta (como en Equipos; la misma preferencia).
   const hayEtiquetas = $derived(actual.equipos.some((e) => e.etiquetas?.length));
-  const grupos = $derived(agruparPorEtiqueta.valor && hayEtiquetas && !filtroEtiqueta.valor ? gruposPorEtiqueta(equipos) : null);
+  const grupos = $derived(agruparPorEtiqueta.valor && hayEtiquetas ? gruposPorEtiqueta(equipos) : null);
   /** Cuántos de un grupo están bien, necesitan atención o fallan (con texto, no solo color). */
   function cuentaGrupo(es: Equipo[]) {
     const t = es.map((e) => saludEquipo(e, reloj.ahora).tono);
@@ -77,6 +82,10 @@
         texto: `${e.nombre}: ${s.detalle}`,
         titulo: `${e.nombre} · ${s.texto.toLowerCase()}`,
         detalle: s.detalle,
+        // 16o: los que tienen lo mismo («Sin contacto», «Copia fallida»…), juntos en una línea.
+        grupo: `salud:${s.texto}`,
+        grupoTexto: s.texto.toLowerCase(),
+        quien: e.nombre,
         accion:
           copia && !sinContacto && puede.ordenar(actual.cliente?.rol)
             ? { texto: "Copiar ahora", orden: { equipo: e, repo: copia.repo, copia: copia.id, nombre: copia.nombre } }
@@ -106,7 +115,7 @@
             accion: { texto: "Ver el repositorio", href: `/c/${c}/equipos/${e.id}/repositorios/${encodeURIComponent(r.id)}#t-espejos` },
           });
     if (actual.avisosAbiertos) out.push({ tono: "warn", texto: `${plural(actual.avisosAbiertos, "aviso sin revisar", "avisos sin revisar")}.`, accion: { texto: "Ver los avisos", href: `/c/${c}/avisos` } });
-    return out.sort((a, b) => PESO[a.tono] - PESO[b.tono]);
+    return agruparUrgentes(out, (g) => ({ texto: "Ver los equipos", href: `/c/${c}/equipos?estado=${estadoDeGrupo(g)}` }));
   });
   const ultima = $derived(
     delFiltro
@@ -121,24 +130,14 @@
   );
   /** Equipos que aún no han hecho su primera copia: sin eso no se dice «Todo protegido». */
   const sinPrimera = $derived(saludes.filter((x) => x.texto === "Sin copias todavía" || x.texto === "Sin copias").length);
-  const titular = $derived(
-    !delFiltro.length
-      ? actual.equipos.length && filtroEtiqueta.valor
-        ? "Ningún equipo con esa etiqueta"
-        : "Todavía no hay equipos"
-      : urgentes.length
-        ? urgentes.length === 1
-          ? "1 cosa necesita atención"
-          : `${urgentes.length} cosas necesitan atención`
-        : sinPrimera === delFiltro.length
-          ? "Sin copias todavía"
-          : sinPrimera
-            ? `${plural(sinPrimera, "equipo aún sin copias", "equipos aún sin copias")}; el resto, protegido`
-            : "Todo protegido",
-  );
+  // Con filtros que dejan equipos fuera, el titular dice en cuántos se mira y nunca «Todo protegido».
+  const cabecera = $derived(titularEstado({ vistos: delFiltro.length, total: sinRepetir.length, conFiltros, urgentes: urgentes.length, sinPrimera }));
+  const titular = $derived(cabecera.texto);
   const tonoTitular = $derived<Tono>(
-    !delFiltro.length ? "neutral" : urgentes.length ? (urgentes.some((u) => u.tono === "bad") ? "bad" : "warn") : sinPrimera === delFiltro.length ? "neutral" : sinPrimera ? "info" : "ok",
+    !delFiltro.length ? "neutral" : urgentes.length ? (urgentes.some((u) => u.tono === "bad") ? "bad" : "warn") : sinPrimera === delFiltro.length ? "neutral" : sinPrimera || cabecera.filtrado ? "info" : "ok",
   );
+  /** Los filtros puestos, en palabras (los mismos chips que la barra). */
+  const textoFiltros = $derived(chipsDe(filtrosEquipos.valor, nombresFiltros()).map((x) => x.texto).join(", "));
   /** Con un solo equipo sin copias, cuándo será la primera. */
   const pistaPrimera = $derived(sinPrimera && sinPrimera === delFiltro.length ? saludes.find((x) => x.texto === "Sin copias todavía")?.detalle : undefined);
   const cuenta = (t: Tono | "sin") => (t === "sin" ? saludes.filter((s) => s.texto === "Sin contacto").length : saludes.filter((s) => s.tono === t).length);
@@ -151,7 +150,16 @@
     untrack(() => void cargarInformes(cc, ids));
   });
   const informes = $derived(ultimos.cliente === c ? ultimos.porEquipo : {});
+  // 16m: «¿estoy protegido?» en tres cifras: equipos al día, copias con una copia fuera del sitio
+  // (la regla 3-2-1-1-0) y la última prueba de restauración.
+  const reglas = $derived(c ? reglasDelCliente(delFiltro, informes, catalogoDe(c), reloj.ahora, actual.equipos, actual.organizacion, listaFuncionales(c), actual.infra) : []);
+  const fueraDelSitio = $derived({ con: reglas.filter((r) => r.regla.partes.find((x) => x.id === "fuera")?.cumple).length, total: reglas.length });
+  const prueba = $derived(ultimaPrueba(delFiltro, informes, reloj.ahora));
+  /** 16m: lo primero que hay que hacer (con su botón); lo demás, plegado debajo. */
+  let verOtras = $state(false);
 
+  // 16w: lo que ocupa de verdad en disco, junto a lo protegido.
+  const espacio = $derived(espacioTotal(delFiltro, informes));
   // Las cuatro cifras de arriba.
   const alDia = $derived(saludes.filter((x) => x.tono === "ok").length);
   const recientes = $derived(ultimas24h(delFiltro, informes, reloj.ahora));
@@ -169,6 +177,14 @@
     return `${d > 0 ? "+" : "−"}${bytes(Math.abs(d))} en 30 días`;
   }
 
+  /**
+   * 16q: con muchos equipos, Estado pintaba una tarjeta por equipo y por repositorio (200 y
+   * 600 en la medida: ~200 000 elementos y 7–9 s de JavaScript). Lo que falla va primero:
+   * se enseñan las primeras y el resto con un botón (o en Equipos y «Repositorios y destinos»).
+   */
+  const PRIMERAS = 24;
+  let todosEquipos = $state(false);
+  let todosRepos = $state(false);
   /** Repositorios de todos los equipos (no los trasladados): lo que falla, primero. */
   const tarjetas = $derived(
     delFiltro
@@ -189,6 +205,8 @@
       .at(0),
   );
   let copiar = $state<{ equipo: Equipo; repo: string; copia: string; nombre: string } | null>(null);
+  /** 16v: «Comprobar todo» (repositorios, derivadas, espejos y, con la persona, los kits). */
+  let comprobarTodo = $state(false);
 </script>
 
 <svelte:head><title>Estado · {actual.cliente?.nombre ?? ""} · Resguardo Server</title></svelte:head>
@@ -214,30 +232,88 @@
               {:else}
                 {plural(delFiltro.length, "equipo", "equipos")} · {#if ultima}última copia <Tiempo iso={ultima} />{:else}todavía sin copias{/if} · {plural(repos.length, "repositorio", "repositorios")}{#if protegido}{" "}con {bytes(protegido)}{/if}
               {/if}
-            {:else if actual.equipos.length && filtroEtiqueta.valor}
-              Ninguno de los {plural(actual.equipos.length, "equipo", "equipos")} de {actual.cliente.nombre} lleva «{filtroEtiqueta.valor}».
+            {:else if actual.equipos.length && conFiltros}
+              Ninguno de los {plural(actual.equipos.length, "equipo", "equipos")} de {actual.cliente.nombre} pasa los filtros elegidos.
             {:else}
               Añade el primer equipo de {actual.cliente.nombre}: instala el agente y escribe el código que te daremos.
             {/if}
           </p>
+          {#if conFiltros && delFiltro.length}
+            <!-- Los filtros de Equipos también valen aquí: que se note junto al titular. -->
+            <p class="con-filtros">
+              <Filter size={14} aria-hidden="true" />
+              <span>{cabecera.filtrado ? `Solo ves ${delFiltro.length} de ${plural(sinRepetir.length, "equipo", "equipos")}: el resto queda oculto por los filtros` : "Con filtros"} ({textoFiltros}).</span>
+              <button type="button" class="btn btn-sm" onclick={() => filtrosEquipos.poner(vacios())}><X size={14} />Quitar los filtros</button>
+            </p>
+          {/if}
         </div>
       </div>
+      {#if delFiltro.length}
+        <!-- 16m: lo que contesta «¿estoy protegido?» de un vistazo. -->
+        <dl class="tres">
+          <div class="t-c">
+            <dt><ShieldCheck size={14} aria-hidden="true" />Equipos al día</dt>
+            <dd class="num">{alDia}<small>{` de ${delFiltro.length}${cabecera.filtrado ? " filtrados" : ""}`}</small></dd>
+            <span class="barra" aria-hidden="true">
+              {#each ["ok", "warn", "bad", "paused", "neutral"] as const as t (t)}
+                {@const n = saludes.filter((x) => x.tono === t).length}
+                {#if n}<span style:flex={n} style="--tone: var(--{t})"></span>{/if}
+              {/each}
+            </span>
+          </div>
+          <div class="t-c">
+            <dt><Cloud size={14} aria-hidden="true" />Con una copia fuera del sitio <Ayuda id="regla-321" /></dt>
+            <dd class="num" class:flojo={fueraDelSitio.total > 0 && fueraDelSitio.con < fueraDelSitio.total}>{fueraDelSitio.total ? fueraDelSitio.con : "—"}{#if fueraDelSitio.total}<small>{` de ${plural(fueraDelSitio.total, "copia", "copias")}`}</small>{/if}</dd>
+            <span class="t-sub">{fueraDelSitio.total ? (fueraDelSitio.con === fueraDelSitio.total ? "en otro sitio o en la nube" : "las demás, todo en el mismo sitio") : "sin copias todavía"}</span>
+          </div>
+          <div class="t-c">
+            <dt><Archive size={14} aria-hidden="true" />Última prueba de restauración</dt>
+            <dd class:flojo={prueba.tono !== "ok"}>{#if prueba.cuando}<Tiempo iso={prueba.cuando} />{:else}Nunca{/if}</dd>
+            <span class="t-sub">{prueba.cuando ? (prueba.tono === "ok" ? `${prueba.recientes} de ${plural(prueba.repos, "repositorio probado", "repositorios probados")} en ${PRUEBA_VALE_DIAS} días` : `hace más de ${PRUEBA_VALE_DIAS} días o falló: prueba otra`) : "comprueba que se puede recuperar"}</span>
+          </div>
+        </dl>
+        {#if puede.ordenar(actual.cliente.rol)}
+          <p class="comprobar-todo">
+            <button type="button" class="btn btn-sm" onclick={() => (comprobarTodo = true)}><ListChecks size={14} />Comprobar todo</button>
+            <span class="faint">Verifica repositorios, copias derivadas y espejos de una vez, y deja un informe.</span>
+          </p>
+        {/if}
+      {/if}
       {#if urgentes.length}
-        <ul class="urgentes">
-          {#each urgentes.slice(0, 6) as u, i (i)}
-            <li>
-              <span class="u-ic tone-{u.tono}" aria-hidden="true">{#if u.tono === "bad"}<CircleAlert size={16} />{:else}<TriangleAlert size={16} />{/if}</span>
-              <span class="texto">{#if u.titulo}<strong>{u.titulo}</strong><span class="det">{u.detalle}</span>{:else}{u.texto}{/if}</span>
-              {#if u.accion?.href}
-                <a class="btn btn-sm" href={u.accion.href}>{u.accion.texto}</a>
-              {:else if u.accion?.orden}
-                <button class="btn btn-sm" onclick={() => (copiar = u.accion!.orden!)}>{u.accion.texto}</button>
-              {/if}
-            </li>
-          {/each}
-        </ul>
-      {:else if actual.equipos.length && !delFiltro.length && filtroEtiqueta.valor}
-        <button type="button" class="btn" onclick={() => filtroEtiqueta.poner("")}><X size={16} />Quitar el filtro</button>
+        {@const u = urgentes[0]}
+        <!-- 16m/16o: lo único que hay que hacer hoy, con su botón; lo demás, plegado. -->
+        <div class="hoy">
+          <p class="hoy-t">{urgentes.length === 1 ? "Lo que hay que hacer" : "Lo primero que hay que hacer"}</p>
+          <div class="hoy-fila">
+            <span class="u-ic tone-{u.tono}" aria-hidden="true">{#if u.tono === "bad"}<CircleAlert size={16} />{:else}<TriangleAlert size={16} />{/if}</span>
+            <span class="texto">{#if u.titulo}<strong>{u.titulo}</strong><span class="det">{u.detalle}</span>{:else}{u.texto}{/if}</span>
+            {#if u.accion?.href}
+              <a class="btn btn-primary btn-sm" href={u.accion.href}>{u.accion.texto}</a>
+            {:else if u.accion?.orden}
+              <button class="btn btn-primary btn-sm" onclick={() => (copiar = u.accion!.orden!)}>{u.accion.texto}</button>
+            {/if}
+          </div>
+        </div>
+        {#if urgentes.length > 1}
+          <button type="button" class="btn btn-ghost btn-sm otras" aria-expanded={verOtras} onclick={() => (verOtras = !verOtras)}><ChevronRight size={14} class={verOtras ? "girado" : ""} />{verOtras ? "Ocultar lo demás" : `Ver ${urgentes.length === 2 ? "la otra" : `las otras ${urgentes.length - 1}`}`}</button>
+          {#if verOtras}
+            <ul class="urgentes">
+              {#each urgentes.slice(1) as u, i (i)}
+                <li>
+                  <span class="u-ic tone-{u.tono}" aria-hidden="true">{#if u.tono === "bad"}<CircleAlert size={16} />{:else}<TriangleAlert size={16} />{/if}</span>
+                  <span class="texto">{#if u.titulo}<strong>{u.titulo}</strong><span class="det">{u.detalle}</span>{:else}{u.texto}{/if}</span>
+                  {#if u.accion?.href}
+                    <a class="btn btn-sm" href={u.accion.href}>{u.accion.texto}</a>
+                  {:else if u.accion?.orden}
+                    <button class="btn btn-sm" onclick={() => (copiar = u.accion!.orden!)}>{u.accion.texto}</button>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        {/if}
+      {:else if actual.equipos.length && !delFiltro.length && conFiltros}
+        <button type="button" class="btn" onclick={() => filtrosEquipos.poner(vacios())}><X size={16} />Quitar los filtros</button>
       {:else if !actual.equipos.length && puede.administrar(actual.cliente.rol)}
         <a class="btn btn-primary" href="/c/{c}/emparejar"><Plus size={16} />Añadir equipo</a>
       {/if}
@@ -246,20 +322,9 @@
     {#if delFiltro.length}
       <div class="cifras" role="list" aria-label="Cifras del cliente">
         <div class="cifra" role="listitem">
-          <span class="c-et"><span class="c-ic" aria-hidden="true"><ShieldCheck size={14} /></span>Equipos al día</span>
-          <span class="c-val num">{alDia}<small>{` de ${delFiltro.length}`}</small></span>
-          <span class="barra" aria-hidden="true">
-            {#each ["ok", "warn", "bad", "paused", "neutral"] as const as t (t)}
-              {@const n = saludes.filter((x) => x.tono === t).length}
-              {#if n}<span style:flex={n} style="--tone: var(--{t})"></span>{/if}
-            {/each}
-          </span>
-          <span class="c-sub">{cuenta("bad") ? plural(cuenta("bad"), "con un problema", "con problemas") : cuenta("warn") ? plural(cuenta("warn"), "con avisos", "con avisos") : "ninguno con problemas"}</span>
-        </div>
-        <div class="cifra" role="listitem">
           <span class="c-et"><span class="c-ic" aria-hidden="true"><Database size={14} /></span>Protegido</span>
           <span class="c-val num">{protegido ? bytes(protegido) : "—"}</span>
-          <span class="c-sub">en {plural(repos.length, "repositorio", "repositorios")}</span>
+          <span class="c-sub" use:tip={fraseEnDisco(espacio) ? `${fraseEnDisco(espacio)}.${espacio.leido ? ` Medido ${relativo(espacio.leido, reloj.ahora)} (cada equipo lo mide una vez al día).` : ""}` : "Lo que ocupan tus archivos en la última versión de cada repositorio."}>{#if espacio.enDisco != null}ocupan {bytes(espacio.enDisco)} en disco con todo su historial{:else}en {plural(repos.length, "repositorio", "repositorios")}{/if}</span>
         </div>
         <div class="cifra" role="listitem">
           <span class="c-et"><span class="c-ic" aria-hidden="true"><Archive size={14} /></span>Versiones en 24 h</span>
@@ -288,7 +353,7 @@
     <PrimerosPasos cliente={actual.cliente} equipos={actual.equipos} {informes} />
     {#if delFiltro.length}<ReglaCliente cliente={c} equipos={delFiltro} todos={actual.equipos} {informes} ahora={reloj.ahora} />{/if}
 
-    <FiltroEtiquetas />
+    {#if actual.equipos.length > 1}<BarraFiltros equipos={sinRepetir} vistos={delFiltro.length} />{/if}
 
     {#if delFiltro.length}
       <MapaProteccion equipos={delFiltro} todos={actual.equipos} {informes} cliente={c} ahora={reloj.ahora} alConectarFuera={(n) => (fuera = n.fuera ?? null)} />
@@ -305,7 +370,7 @@
         <div class="section-head">
           <h2>Equipos <span class="count">· {delFiltro.length}</span></h2>
           <span class="acciones-eq">
-            {#if hayEtiquetas && !filtroEtiqueta.valor}<label class="agrupar"><input type="checkbox" checked={agruparPorEtiqueta.valor} onchange={(e) => agruparPorEtiqueta.poner(e.currentTarget.checked)} />Agrupar por etiqueta</label>{/if}
+            {#if hayEtiquetas}<label class="agrupar"><input type="checkbox" checked={agruparPorEtiqueta.valor} onchange={(e) => agruparPorEtiqueta.poner(e.currentTarget.checked)} />Agrupar por etiqueta</label>{/if}
             {#if puede.administrar(actual.cliente.rol)}<a class="btn btn-sm btn-ghost" href="/c/{c}/emparejar"><Plus size={14} />Añadir equipo</a>{/if}
           </span>
         </div>
@@ -313,7 +378,7 @@
           {#each grupos as g (g.etiqueta ?? "")}
             {@const n = cuentaGrupo(g.equipos)}
             <div class="cab-grupo">
-              {#if g.etiqueta}<button type="button" class="sin-boton" onclick={() => filtroEtiqueta.poner(g.etiqueta!)} use:tip={`Ver solo los de «${g.etiqueta}»`}><EtiquetaChip nombre={g.etiqueta} /></button>{:else}<span class="sin-et">Sin etiqueta</span>{/if}
+              {#if g.etiqueta}<button type="button" class="sin-boton" onclick={() => filtrosEquipos.poner({ ...vacios(), etiquetas: [g.etiqueta!] })} use:tip={`Ver solo los de «${g.etiqueta}»`}><EtiquetaChip nombre={g.etiqueta} /></button>{:else}<span class="sin-et">Sin etiqueta</span>{/if}
               <span class="faint">
                 {plural(g.equipos.length, "equipo", "equipos")}{#if n.mal}{" · "}<span class="g-mal"><CircleAlert size={12} />{plural(n.mal, "con problemas", "con problemas")}</span>{/if}{#if n.atencion}{" · "}<span class="g-aviso"><TriangleAlert size={12} />{plural(n.atencion, "necesita atención", "necesitan atención")}</span>{/if}{#if n.bien === g.equipos.length}{" · "}<span class="g-ok"><CircleCheck size={12} />todos bien</span>{/if}
               </span>
@@ -324,8 +389,11 @@
           {/each}
         {:else}
           <div class="rejilla equipos">
-            {#each equipos as e (e.id)}<TarjetaEquipo equipo={e} informe={informes[e.id]} cliente={c} ahora={reloj.ahora} />{/each}
+            {#each todosEquipos ? equipos : equipos.slice(0, PRIMERAS) as e (e.id)}<TarjetaEquipo equipo={e} informe={informes[e.id]} cliente={c} ahora={reloj.ahora} />{/each}
           </div>
+          {#if !todosEquipos && equipos.length > PRIMERAS}
+            <p class="ver-mas"><button type="button" class="btn btn-sm" onclick={() => (todosEquipos = true)}>Ver los {equipos.length - PRIMERAS} equipos restantes</button><a class="link" href="/c/{c}/equipos">o la lista en Equipos</a></p>
+          {/if}
         {/if}
       </section>
 
@@ -336,17 +404,20 @@
             <a class="btn btn-sm btn-ghost" href="/c/{c}/destinos">Ver todos</a>
           </div>
           <div class="rejilla repos">
-            {#each tarjetas as t (t.equipo.id + t.repo.id)}
+            {#each todosRepos ? tarjetas : tarjetas.slice(0, PRIMERAS) as t (t.equipo.id + t.repo.id)}
               <TarjetaRepo repo={t.repo} inf={informeDe(informes[t.equipo.id], t.repo.id)} equipo={t.equipo} cliente={c} ahora={reloj.ahora} />
             {/each}
           </div>
+          {#if !todosRepos && tarjetas.length > PRIMERAS}
+            <p class="ver-mas"><button type="button" class="btn btn-sm" onclick={() => (todosRepos = true)}>Ver los {tarjetas.length - PRIMERAS} repositorios restantes</button></p>
+          {/if}
         </section>
       {/if}
     {:else}
       <div class="card">
-        {#if actual.equipos.length && filtroEtiqueta.valor}
-          <Vacio icono={Database} ilustracion="sin-resultados" titulo="Ningún equipo con esa etiqueta" texto="Quita el filtro para ver todos los equipos.">
-            <button type="button" class="btn" onclick={() => filtroEtiqueta.poner("")}><X size={16} />Quitar el filtro</button>
+        {#if actual.equipos.length && conFiltros}
+          <Vacio icono={Database} ilustracion="sin-resultados" titulo="Ningún equipo con esos filtros" texto="Quita los filtros para ver todos los equipos.">
+            <button type="button" class="btn" onclick={() => filtrosEquipos.poner(vacios())}><X size={16} />Quitar los filtros</button>
           </Vacio>
         {:else}
           <!-- «Añadir equipo» ya está en el resumen de arriba: una sola acción a la vista. -->
@@ -393,6 +464,10 @@
 
 {#if fuera && actual.cliente}<AlmacenEnOtraConsola cliente={actual.cliente} almacen={fuera.almacen} consolas={fuera.consolas} onclose={() => (fuera = null)} />{/if}
 
+{#if comprobarTodo && actual.cliente}
+  <ComprobarTodo cliente={actual.cliente} equipos={delFiltro} {reglas} filtro={textoFiltros} onclose={() => (comprobarTodo = false)} />
+{/if}
+
 {#if copiar && actual.cliente}
   {#key copiar}
   <OrdenDialog
@@ -408,6 +483,22 @@
 {/if}
 
 <style>
+  .ver-mas {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    margin: var(--sp-3) 0 0;
+    font-size: var(--fs-sm);
+  }
+  .comprobar-todo {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    margin: var(--sp-3) 0 0;
+    font-size: var(--fs-sm);
+  }
   .linea-espera {
     align-items: center;
   }
@@ -498,6 +589,18 @@
     margin: 6px 0 0;
     color: var(--text-2);
   }
+  .cab p.con-filtros {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    margin-top: var(--sp-3);
+    font-size: var(--fs-sm);
+    color: var(--text-1);
+  }
+  .con-filtros :global(svg) {
+    flex: none;
+  }
   .urgentes {
     display: flex;
     flex-direction: column;
@@ -535,6 +638,85 @@
     flex: none;
     margin-top: 2px;
     color: var(--tone);
+  }
+  /* 16m: las tres cifras de «¿estoy protegido?», dentro del resumen. */
+  .tres {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+    gap: var(--sp-4);
+    margin: 0;
+  }
+  .t-c {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .t-c dt {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--fs-xs);
+    font-weight: 500;
+    color: var(--text-2);
+  }
+  .t-c dd {
+    margin: 0;
+    font-size: var(--fs-stat);
+    line-height: 28px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .t-c dd small {
+    font-size: var(--fs-sm);
+    font-weight: 400;
+    color: var(--text-3);
+    letter-spacing: 0;
+  }
+  .t-c dd.flojo {
+    color: var(--warn);
+  }
+  .t-sub {
+    font-size: var(--fs-xs);
+    color: var(--text-3);
+  }
+  /* 16m: lo único que hay que hacer hoy, con su botón. */
+  .hoy {
+    padding-top: var(--sp-4);
+    border-top: 1px solid var(--border);
+  }
+  .hoy-t {
+    margin: 0 0 var(--sp-2);
+    font-size: var(--fs-overline);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-3);
+  }
+  .hoy-fila {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-3);
+  }
+  .hoy-fila .texto {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .hoy-fila strong {
+    font-weight: 500;
+  }
+  .hoy-fila .det {
+    font-size: var(--fs-sm);
+    color: var(--text-2);
+  }
+  .otras {
+    align-self: flex-start;
+  }
+  .otras :global(.girado) {
+    transform: rotate(90deg);
   }
   .rejilla.repos {
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
@@ -634,6 +816,15 @@
       flex-basis: calc(100% - 28px);
     }
     .urgentes .btn {
+      margin-left: 28px;
+    }
+    .hoy-fila {
+      flex-wrap: wrap;
+    }
+    .hoy-fila .texto {
+      flex-basis: calc(100% - 28px);
+    }
+    .hoy-fila .btn {
       margin-left: 28px;
     }
   }

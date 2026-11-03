@@ -63,11 +63,12 @@ Ponla en el repositorio:
 
    Los equipos que pueden salir a Internet la verán en GitHub (`releases/latest/download/manifiesto-agente.json`) si sus consolas no la tienen.
 5. **Cada Resguardo Server** (para los equipos de su red, aunque no tengan Internet):
-   - en la consola: **Servidor → Actualizaciones de los agentes → Subir una versión** (el manifiesto, su firma y los archivos), o
+   - en la consola: **Mi cuenta y servidor → Actualizaciones de los agentes → Subir una versión** (el manifiesto, su firma y los archivos), o
    - en la máquina del servidor: `sudo resguardo-server poner-publicacion /ruta/a/0.7.25` (en Windows, como administrador).
 
    El servidor comprueba la firma y cada SHA-256 antes de aceptarla.
-6. **Despliegue por anillos** (en cada cliente, «Versiones»): los equipos en **prueba** se actualizan enseguida (dentro de su ventana); los de **general**, a los días que diga la política (2 por defecto). Si alguno vuelve atrás, la versión queda **retenida** para el resto del cliente y llega el aviso «actualizacion_fallida».
+6. **Falsos positivos de Microsoft (16z), antes de soltarla a los anillos**: sube `resguardo-agente.exe` y `resguardo-server.exe` de esta versión (y el instalador) al análisis de Microsoft en <https://www.microsoft.com/wdsi/filesubmission>, como desarrollador, marcando que no es malware. Cada compilación es un archivo nuevo para las heurísticas de Defender (la 0.8.2 se detectó como troyano por aprendizaje automático en dos servidores). Apunta el número de cada envío y espera la respuesta (suele ser de horas a un par de días) antes de pasar del anillo de **prueba** a **general** (mientras, la publicación puede quedar «En pausa» en cada cliente). Si llega una detección real de un cliente, envía también ese archivo y sigue la ayuda «El antivirus lo bloqueó» ([guia-instalacion.md](guia-instalacion.md), 5.7).
+7. **Despliegue por anillos** (en cada cliente, «Versiones»): los equipos en **prueba** se actualizan enseguida (dentro de su ventana); los de **general**, a los días que diga la política (2 por defecto). Si alguno vuelve atrás, la versión queda **retenida** para el resto del cliente y llega el aviso «actualizacion_fallida».
    - Para parar todo: «En pausa».
    - Para no esperar: «Actualizar ahora» (todo el cliente o un equipo).
 

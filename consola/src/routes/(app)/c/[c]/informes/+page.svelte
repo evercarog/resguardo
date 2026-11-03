@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { primerPaso } from "$lib/urgentes";
   import { funcionalesDe, listaFuncionales } from "$lib/funcionales.svelte";
   import { cifrasPruebas, diaLargo, resultadoPrueba, textoAlcance, textoMinutos, textoPlazo } from "$lib/pruebasFuncionales";
   // Informe mensual del cliente, para enseñar o imprimir (o guardar en PDF):
@@ -358,7 +359,7 @@
       <Esqueleto forma="tabla" n={4} />
     {:else if !delPeriodo.length}
       <Vacio icono={FileBarChart} titulo="Aún no hay nada que contar" texto="Cuando los equipos hagan sus primeras copias, aquí saldrá su informe.">
-        <a class="btn btn-primary no-imprimir" href="/c/{actual.id}/equipos">Ver los equipos</a>
+        {#if primerPaso(actual.id, actual.equipos, puede.administrar(actual.cliente?.rol))}{@const pp = primerPaso(actual.id, actual.equipos, puede.administrar(actual.cliente?.rol))!}<a class="btn btn-primary no-imprimir" href={pp.href}>{pp.texto}</a>{/if}
       </Vacio>
     {:else}
       {#if faltanDatos.length}

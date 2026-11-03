@@ -1,11 +1,13 @@
 <script lang="ts">
   // Plan 0.8.0, D4: el filtro de cliente de las secciones de «Todos los clientes»
   // (y la búsqueda). Se recuerda en el navegador por sección.
+  import type { Snippet } from "svelte";
   import { Search } from "@lucide/svelte";
   import { todos } from "$lib/todos.svelte";
   import { guardar, leerTexto } from "$lib/recordar";
 
-  let { seccion, cliente = $bindable(""), buscar = $bindable(""), placeholder = "Buscar" }: { seccion: string; cliente?: string; buscar?: string; placeholder?: string } = $props();
+  // 16t: `children`, lo demás de la misma fila (el rango de fechas, la cuenta).
+  let { seccion, cliente = $bindable(""), buscar = $bindable(""), placeholder = "Buscar", children }: { seccion: string; cliente?: string; buscar?: string; placeholder?: string; children?: Snippet } = $props();
 
   // Lo recordado, una vez (sin seguir lo que se cambia aquí).
   let leido = false;
@@ -32,6 +34,7 @@
       {#each todos.clientes as c (c.id)}<option value={c.id}>{c.nombre}</option>{/each}
     </select>
   {/if}
+  {@render children?.()}
 </div>
 
 <style>
@@ -43,7 +46,7 @@
   }
   .buscar {
     flex: 1;
-    min-width: 200px;
+    min-width: min(200px, 100%);
   }
   .cliente {
     width: auto;

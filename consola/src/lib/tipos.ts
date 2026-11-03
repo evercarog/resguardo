@@ -29,6 +29,8 @@ export interface Servidor {
   vivo?: boolean;
   /** v1.6x (plan 0.8.0, E1): lo más que puede ocupar una descarga por el relé, en bytes (sin el campo: 500 MB). */
   max_descarga?: number;
+  /** 16k: días de «Recordar este dispositivo» (0: no se ofrece) y horas sin usarla. Sin el campo: servidor anterior. */
+  sesion?: { recordar_dias: number; inactividad_horas: number };
 }
 
 /** v1.34: cuotas de un cliente. null = la predeterminada; 0 = sin límite. */
@@ -98,6 +100,42 @@ export interface Cuenta {
   nombre: string;
   superusuario: boolean;
   clientes: { id: string; nombre: string; rol: Rol }[];
+  /** 16k: la sesión actual (sin el campo: servidor anterior). */
+  sesion?: SesionActual;
+  /** 16k: otras sesiones abiertas después de esta en las últimas 24 h («¿eras tú?»). */
+  sesiones_nuevas?: { id: string; navegador: string; creada: string }[];
+}
+
+/** 16k: la sesión en la que estás. */
+export interface SesionActual {
+  id: string;
+  creada: string;
+  recordar: boolean;
+  caduca: string;
+  maximo: string;
+  /** Hasta cuándo es «nueva» (no puede cerrar otras ni cambiar la contraseña); null: ya puede. */
+  nueva_hasta: string | null;
+}
+
+/** 16k: una sesión de la cuenta en la lista de «Mi cuenta». */
+export interface SesionCuenta {
+  id: string;
+  actual: boolean;
+  navegador: string;
+  ip: string;
+  creada: string;
+  usada: string;
+  caduca: string;
+  maximo: string;
+  recordar: boolean;
+  nueva: boolean;
+}
+
+/** 16k: plazos de las sesiones (los ajusta el propietario del servidor). */
+export interface PlazosSesion {
+  inactividad_horas: number;
+  maximo_horas: number;
+  recordar_dias: number;
 }
 
 /** v1.27: un propietario restableció la verificación en dos pasos de la cuenta. */

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ErrorCopia from "$lib/componentes/ErrorCopia.svelte";
   // «Todos los clientes» → Restauraciones (plan 0.8.0, D4, 14xx; 13d): el registro de
   // restauraciones de todos los clientes de la cuenta (GET /api/panel/restauraciones),
   // la más reciente primero, con sus cifras (cuántas, éxito, tiempo medio). Cada fila
@@ -9,7 +10,9 @@
   import { ArchiveRestore, CircleAlert, CircleCheck, Clock, ListChecks } from "@lucide/svelte";
   import { reloj } from "$lib/estado.svelte";
   import { bytes, plural, relativo } from "$lib/formato";
-  import { sinTildes } from "$lib/global";
+  import { casaBusqueda, enRango, SIN_RANGO, tanda, TANDA, textoFilas, type Rango } from "$lib/tablas";
+  import ElegirFechas from "$lib/componentes/repo/ElegirFechas.svelte";
+  import VerMas from "$lib/componentes/VerMas.svelte";
   import { claseRestauracion, estadisticas, NOMBRES_CLASE, textoDesde, textoDestino, textoMotivo, textoMuestra, textoQuien, textoTardo, type ClaseRestauracion } from "$lib/restauraciones";
   import { restauracionesDeTodos } from "$lib/todosSecciones.svelte";
   import { restauracionesTodos } from "$lib/todosSecciones";
@@ -40,6 +43,9 @@
   let cliente = $state("");
   let buscar = $state("");
   let clase = $state<ClaseRestauracion>("real");
+  // 16t: el rango de fechas y «Ver más», como en las demás listas largas.
+  let rango = $state<Rango>({ ...SIN_RANGO });
+  let limite = $state(TANDA);
   const filas = $derived(restauracionesTodos(datos, todos.clientes));
   const porClase = $derived({
     real: filas.filter((r) => claseRestauracion(r) === "real").length,
@@ -50,11 +56,15 @@
     filas.filter((r) => {
       if (claseRestauracion(r) !== clase) return false;
       if (cliente && r.cliente.id !== cliente) return false;
-      const p = sinTildes(buscar).split(/\s+/).filter(Boolean);
-      const t = sinTildes([r.cliente.nombre, r.equipoNombre ?? "", r.repo, r.por ?? "", textoMotivo(r.motivoFinal?.tipo) ?? ""].join(" "));
-      return p.every((w) => t.includes(w));
+      if (!enRango(r.hora, rango)) return false;
+      return casaBusqueda(buscar, r.cliente.nombre, r.equipoNombre, r.repo, r.por, textoMotivo(r.motivoFinal?.tipo));
     }),
   );
+  $effect.pre(() => {
+    void [clase, cliente, buscar, rango];
+    limite = TANDA;
+  });
+  const enPantalla = $derived(tanda(vistas, limite).visibles);
   const cifras = $derived(estadisticas(vistas));
 </script>
 
@@ -80,9 +90,12 @@
       <Cifra icono={CircleCheck} etiqueta="Correctas" valor={cifras.total ? `${Math.round((cifras.correctas / cifras.total) * 100)} %` : "—"} sub={plural(cifras.correctas, "correcta", "correctas")} />
       <Cifra icono={Clock} etiqueta={clase === "real" ? "Tiempo medio (RTO real)" : "Tiempo medio de una prueba"} valor={textoTardo(cifras.medio_s)} sub={cifras.maximo_s != null ? `la más larga, ${textoTardo(cifras.maximo_s)}` : "sin correctas"} />
     </div>
-    <FiltroCliente seccion="restauraciones" bind:cliente bind:buscar placeholder="Buscar cliente, equipo, repositorio o quién" />
+    <FiltroCliente seccion="restauraciones" bind:cliente bind:buscar placeholder="Buscar cliente, equipo, repositorio o quién">
+      <ElegirFechas desde={rango.desde} hasta={rango.hasta} ahora={reloj.ahora} alElegir={(desde, hasta) => (rango = { desde, hasta })} />
+      <span class="faint num cuenta-filas" aria-live="polite">{textoFilas(vistas.length, porClase[clase], clase === "real" ? "restauración" : "prueba", clase === "real" ? "restauraciones" : "pruebas")}</span>
+    </FiltroCliente>
     <ul class="card p-0 lista">
-      {#each vistas as r (r.clave)}
+      {#each enPantalla as r (r.clave)}
         <li>
           <span class="ic" class:mal={r.resultado !== "ok"} aria-hidden="true">{#if r.resultado !== "ok"}<CircleAlert size={16} />{:else}<CircleCheck size={16} />{/if}</span>
           <span class="txt">
@@ -93,16 +106,22 @@
             {:else}
               <span class="det">{plural(r.elementos ?? 0, "elemento", "elementos")}{r.bytes ? ` · ${bytes(r.bytes)}` : ""} · {textoDestino(r.destino)} · {textoQuien(r)}{#if r.motivoFinal}{" · "}{textoMotivo(r.motivoFinal.tipo)}{/if}</span>
             {/if}
-            {#if r.resultado !== "ok" && r.mensaje}<span class="det mal">{r.mensaje}</span>{/if}
+            {#if r.resultado !== "ok" && r.mensaje}<span class="det mal"><ErrorCopia mensaje={r.mensaje} /></span>{/if}
           </span>
           <span class="cuando num">{relativo(r.hora, reloj.ahora)}<span class="faint">tardó {textoTardo(r.duracion_s)}</span></span>
         </li>
       {/each}
     </ul>
+    {#if !vistas.length}<p class="faint">Ninguna con estos filtros.</p>{/if}
+    <VerMas vistas={enPantalla.length} total={vistas.length} onclick={() => (limite += TANDA)} alVolver={() => (limite = TANDA)} />
   {/if}
 </div>
 
 <style>
+  .cuenta-filas {
+    margin-left: auto;
+    font-size: var(--fs-sm);
+  }
   .page {
     display: flex;
     flex-direction: column;

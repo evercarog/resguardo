@@ -4,12 +4,14 @@
   import { fade, fly } from "svelte/transition";
   import { Menu, Search } from "@lucide/svelte";
   import { afterNavigate } from "$app/navigation";
+  import { marcarAccion } from "$lib/actividad.svelte";
   import { page } from "$app/state";
   import Logo from "$ui/componentes/Logo.svelte";
   import { dur } from "$ui/movimiento";
   import BarraLateral from "$lib/componentes/BarraLateral.svelte";
   import SinConexion from "$lib/componentes/SinConexion.svelte";
   import VersionNueva from "$lib/componentes/VersionNueva.svelte";
+  import AvisoSesionNueva from "$lib/componentes/AvisoSesionNueva.svelte";
   import { vigilarVersion } from "$lib/version.svelte";
   import * as api from "$lib/api";
   import MarcaCliente from "$lib/componentes/MarcaCliente.svelte";
@@ -23,9 +25,11 @@
   import { todasEnMarcha } from "$lib/progreso.svelte";
   import { ponerIcono } from "$lib/favicon";
   import { barra } from "$lib/barra.svelte";
+  import BarraMovil from "$lib/componentes/BarraMovil.svelte";
 
   let { children }: { children: Snippet } = $props();
   let cajon = $state(false);
+  const enCliente = $derived(!!actual.id && page.url.pathname.startsWith(`/c/${actual.id}`));
   let principal = $state<HTMLElement>();
 
   onMount(() => {
@@ -45,8 +49,16 @@
     ponerIcono(avisos ? "aviso" : actual.id && todasEnMarcha().length ? "marcha" : "normal");
   });
   onMount(() => () => ponerIcono("normal"));
+  // 16r: con la barra de abajo del móvil, los avisos breves (Toaster, fuera de este diseño) suben
+  // por encima de ella: se marca en <html>, que el Toaster sí ve.
+  $effect(() => {
+    document.documentElement.classList.toggle("con-barra-movil", enCliente);
+  });
+  onMount(() => () => document.documentElement.classList.remove("con-barra-movil"));
   // Al cambiar de pantalla, el foco va al contenido (lectores de pantalla y teclado).
   afterNavigate(({ type }) => {
+    // 16l: lo que la pantalla nueva pide al llegar es de primer plano (la barra de arriba).
+    marcarAccion();
     if (type !== "enter") principal?.focus({ preventScroll: true });
   });
 
@@ -104,11 +116,14 @@
       </div>
     {/if}
 
-    <main id="contenido" class="contenido" bind:this={principal} tabindex="-1">
+    <main id="contenido" class="contenido" class:con-barra-movil={enCliente} bind:this={principal} tabindex="-1">
       <SinConexion />
       <VersionNueva />
+      <AvisoSesionNueva />
       {@render children()}
     </main>
+    <!-- 16r: en el móvil, lo principal del cliente abajo, a un toque. -->
+    {#if enCliente}<BarraMovil />{/if}
   </div>
   <Paleta />
   <AccionesGlobales />
@@ -211,6 +226,12 @@
       margin-left: auto;
       width: 36px;
       height: 36px;
+    }
+    /* Que la barra de abajo no tape lo último de la página. */
+    .contenido.con-barra-movil {
+      /* Lo pegado abajo (las barras de «Varios a la vez», «Restaurar»…) sube lo mismo. */
+      --barra-movil: calc(64px + env(safe-area-inset-bottom));
+      padding-bottom: var(--barra-movil);
     }
   }
 </style>

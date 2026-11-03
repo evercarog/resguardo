@@ -1,6 +1,6 @@
 [package]
 name = "resguardo-servidor"
-version = "0.8.2"
+version = "0.8.3"
 description = "Resguardo Server: consola web, API y canal de los agentes (ver docs/plataforma.md)"
 edition.workspace = true
 license.workspace = true
@@ -67,6 +67,10 @@ windows-service = "0.7"
 # Lleva dentro la consola de `consola/build` (antes: `npm ci && npm run build` en consola/).
 # `--consola DIR` sigue teniendo prioridad.
 consola-integrada = ["dep:rust-embed"]
+
+[build-dependencies]
+# Datos de versión, icono y manifiesto del .exe en Windows (16z); en Linux no hace nada.
+embed-resource = "3"
 
 [dev-dependencies]
 # Firmar publicaciones con la llave de pruebas (docs/actualizaciones.md).

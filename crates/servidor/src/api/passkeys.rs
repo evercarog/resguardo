@@ -116,6 +116,7 @@ pub async fn listar(State(st): State<St>, u: Usuario) -> Res<Json<Value>> {
 /// `POST /api/cuenta/passkeys/opciones` (contraseña y código TOTP).
 pub async fn opciones_alta(State(st): State<St>, u: Usuario, headers: HeaderMap, Json(p): Json<Reautenticar>) -> Res<Json<Value>> {
     let (_, rp) = origen(&headers)?;
+    u.sesion_asentada(&st).await?;
     reautenticar(&st, &u, &p).await?;
     let id = u.id().to_string();
     let ps = st
@@ -153,6 +154,7 @@ pub struct Alta {
 
 /// `POST /api/cuenta/passkeys`: guarda la llave nueva.
 pub async fn alta(State(st): State<St>, u: Usuario, headers: HeaderMap, Json(a): Json<Alta>) -> Res<Json<Value>> {
+    u.sesion_asentada(&st).await?;
     if !st.limites.intento(&format!("passkey-alta:{}", u.id()), MAX_INTENTOS, VENTANA) {
         return Err(ErrorApi::demasiados());
     }
@@ -204,6 +206,7 @@ pub async fn alta(State(st): State<St>, u: Usuario, headers: HeaderMap, Json(a):
 
 /// `DELETE /api/cuenta/passkeys/{ref}` (contraseña y código TOTP).
 pub async fn baja(State(st): State<St>, u: Usuario, Path(r): Path<String>, Json(p): Json<Reautenticar>) -> Res<Json<Value>> {
+    u.sesion_asentada(&st).await?;
     reautenticar(&st, &u, &p).await?;
     let (id, correo) = (u.id().to_string(), u.0.cuenta.correo.clone());
     let lista = st
@@ -274,7 +277,7 @@ pub async fn entrar(State(st): State<St>, Pendiente(s): Pendiente, headers: Head
     let (cd, ad, firma) = (de_b64url(&f.client_data), de_b64url(&f.authenticator_data), de_b64url(&f.firma));
     let (Some(cd), Some(ad), Some(firma)) = (cd, ad, firma) else { return Err(ErrorApi::datos("Respuesta de la llave no válida.")) };
     let cuenta = s.cuenta.clone();
-    let (id, th, correo) = (cuenta.id.clone(), s.token_hash.clone(), cuenta.correo.clone());
+    let (id, th, correo, pendiente) = (cuenta.id.clone(), s.token_hash.clone(), cuenta.correo.clone(), s.sesion.clone());
     let id_cred = f.id.trim_end_matches('=').to_string();
     let (ficha, th_nueva) = auth::ficha_nueva();
     let ok = st
@@ -282,8 +285,8 @@ pub async fn entrar(State(st): State<St>, Pendiente(s): Pendiente, headers: Head
             let reto = gastar_reto(db, &format!("entrar:{th}"))?;
             let mut ps = de_cuenta(db, &id)?;
             let pk = ps.iter_mut().find(|p| p.id == id_cred && p.rp == rp);
-            let (Some(reto), Some(pk)) = (reto, pk) else { return Ok(false) };
-            let Some(cose) = de_b64url(&pk.cose) else { return Ok(false) };
+            let (Some(reto), Some(pk)) = (reto, pk) else { return Ok(None) };
+            let Some(cose) = de_b64url(&pk.cose) else { return Ok(None) };
             match wa::verificar_asercion(&cd, &ad, &firma, &reto, &origen, &rp, &cose, pk.contador) {
                 Ok(n) => {
                     pk.contador = n;
@@ -292,29 +295,31 @@ pub async fn entrar(State(st): State<St>, Pendiente(s): Pendiente, headers: Head
                     guardar(db, &id, &ps)?;
                     // Sesión completa = ficha nueva (como con el TOTP).
                     db.borrar_sesion(&th)?;
-                    db.crear_sesion(&th_nueva, &id, 2, ahora() + auth::SESION_HORAS * 3600)?;
-                    db.auditar_servidor(&format!("cuenta:{correo}"), "entrar_passkey", &id, &json!({ "nombre": nombre }).to_string())?;
-                    Ok(true)
+                    let n = auth::nueva_completa(db, &th_nueva, &pendiente);
+                    db.crear_sesion(&n)?;
+                    let datos = json!({ "nombre": nombre, "navegador": n.agente, "recordar": n.recordar }).to_string();
+                    db.auditar_servidor(&format!("cuenta:{correo}"), "entrar_passkey", &id, &datos)?;
+                    Ok(Some(auth::max_edad(&n)))
                 }
                 Err(e) => {
                     // Un contador que no sube puede ser una llave copiada: queda anotado (sin datos de la llave).
                     if e.contains("contador") {
                         db.auditar_servidor(&format!("cuenta:{correo}"), "passkey_contador", &id, &json!({ "nombre": pk.nombre }).to_string())?;
                     }
-                    Ok(false)
+                    Ok(None)
                 }
             }
         })
         .await?
         .map_err(ErrorApi::interno)?;
-    if !ok {
+    let Some(edad) = ok else {
         return Err(ErrorApi::nuevo(StatusCode::UNAUTHORIZED, "codigo", "La llave de acceso no sirve para entrar aquí. Usa el código de tu aplicación.")
             .acceso("passkey"));
-    }
+    };
     st.limites.olvidar(&format!("totp:{}", cuenta.id));
     st.limites.olvidar(&format!("entrar:{}", cuenta.correo));
     let cuerpo = json!({ "cuenta": cuenta_json(&st, &cuenta.id).await? });
-    Ok(con_cookie(auth::cookie_sesion(&st, &ficha, auth::SESION_HORAS * 3600), cuerpo))
+    Ok(con_cookie(auth::cookie_sesion(&st, &ficha, edad), cuerpo))
 }
 
 /// Cuántas llaves de esta dirección tiene la cuenta (para decirlo al entrar).

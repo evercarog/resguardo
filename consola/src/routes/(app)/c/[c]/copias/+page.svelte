@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { primerPaso } from "$lib/urgentes";
   import { listaFuncionales } from "$lib/funcionales.svelte";
   import { untrack } from "svelte";
   // Copias del cliente (docs/diseno.md §5): todas las copias de todos sus
@@ -166,7 +167,7 @@
   {:else if !filas.length}
     <div class="card">
       <Vacio icono={FolderSync} ilustracion="sin-repos" titulo="Todavía no hay copias" texto="Una copia dice qué carpetas de un equipo se guardan, dónde y cuándo. Se crean desde la ficha de cada equipo.">
-        {#if actual.equipos.length}<a class="btn btn-primary" href="/c/{actual.id}/equipos">Ver los equipos</a>{:else if puede.administrar(actual.cliente.rol)}<a class="btn btn-primary" href="/c/{actual.id}/emparejar">Añadir equipo</a>{/if}
+        {#if primerPaso(actual.id, actual.equipos, puede.administrar(actual.cliente?.rol))}{@const pp = primerPaso(actual.id, actual.equipos, puede.administrar(actual.cliente?.rol))!}<a class="btn btn-primary" href={pp.href}>{pp.texto}</a>{/if}
       </Vacio>
     </div>
   {:else}
@@ -475,7 +476,7 @@
   }
   .barra-bloque {
     position: sticky;
-    bottom: var(--sp-4);
+    bottom: calc(var(--sp-4) + var(--barra-movil, 0px));
     z-index: 4;
     display: flex;
     flex-wrap: wrap;

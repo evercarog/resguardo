@@ -95,6 +95,20 @@ export function admiteClave(e: Pick<Equipo, "resumen"> | null | undefined, clave
 
 /** 0.8.2 (A5): `resumen.admite` de un agente que guarda la infraestructura (`infra:`). */
 export const ADMITE_INFRA = "infra_comun";
+/** 0.8.3 (16a, 16f): `resumen.admite` de un agente que acepta la marca de cada disco y el número de serie y la etiqueta de inventario del servidor. */
+export const ADMITE_INFRA_FICHA = "infra_ficha";
+
+/**
+ * 0.8.3 (16a, 16f): lo que se manda a un equipo. A un agente sin `infra_ficha` (rechazaría la
+ * orden entera por un campo que no conoce), el servidor físico va sin `serie`, `inventario`
+ * ni la `marca` de sus discos: esos datos siguen en esta consola.
+ */
+export function adaptarPara<T extends { clave: string; valor: unknown }>(e: Pick<Equipo, "resumen"> | null | undefined, x: T): T {
+  if (!x.clave.startsWith("infra:servidor:") || !x.valor || typeof x.valor !== "object" || e?.resumen?.admite?.includes(ADMITE_INFRA_FICHA)) return x;
+  const { serie: _s, inventario: _i, ...resto } = x.valor as Record<string, unknown>;
+  const discos = Array.isArray(resto.discos) ? resto.discos.map((d) => (d && typeof d === "object" ? (({ marca: _m, ...r }) => r)(d as Record<string, unknown>) : d)) : resto.discos;
+  return { ...x, valor: discos === undefined ? resto : { ...resto, discos } };
+}
 /** 0.8.2 (A5): con el documento del equipo por encima de esto, la infraestructura deja de repartirse a ese equipo. */
 export const LLENO_INFRA = 224 * 1024;
 /** 0.8.1 (H2, 15qq): `resumen.admite` de un agente que guarda el inventario de lo protegido. */

@@ -60,6 +60,7 @@
     const n = x.ids.length;
     const partes = [n ? plural(n, "versión", "versiones") : "sin versiones"];
     if (x.fallos) partes.push(x.fallos === 1 ? "hubo un fallo" : `hubo ${x.fallos} fallos`);
+    if (x.perdidas) partes.push(x.perdidas === 1 ? "tocaba una copia y no se hizo" : `tocaban ${x.perdidas} copias y no se hicieron`);
     if (n && x.quitan) partes.push(x.quitan === n ? (n === 1 ? "la quitaría la próxima retención" : "las quitaría todas la próxima retención") : `${x.quitan} las quitaría la próxima retención`);
     if (cabecera) partes.push("ver el día entero");
     return `${cuando}: ${partes.join(", ")}`;
@@ -212,6 +213,7 @@
                 class:finde={col.finde}
                 class:en-filtro={!!col.dia && enFiltro(col.dia)}
                 class:falla={!!col.dia?.fallos}
+                class:perdida={!!col.dia?.perdidas && !col.dia?.fallos}
                 role="columnheader"
                 tabindex={enfocable === k ? 0 : -1}
                 data-k={k}
@@ -234,6 +236,7 @@
                 class:en-filtro={enFiltro(x)}
                 class:elegida={conElegida(x)}
                 class:falla={x.fallos > 0}
+                class:perdida={x.perdidas > 0 && !x.fallos}
                 role="gridcell"
                 tabindex={enfocable === k ? 0 : -1}
                 aria-selected={enFiltro(x)}
@@ -459,6 +462,25 @@
     background: var(--bad);
     box-shadow: 0 0 0 1.5px var(--surface);
     pointer-events: none;
+  }
+  /* 16y: tocaba una copia y no se hizo: un aro hueco en la esquina (sin relleno: no es un fallo,
+   * el equipo no estaba). Con la palabra en la leyenda, el globo y el nombre de la casilla. */
+  .c.perdida::after,
+  .cab.perdida::after {
+    content: "";
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--surface);
+    box-shadow: inset 0 0 0 1.5px var(--warn), 0 0 0 1.5px var(--surface);
+    pointer-events: none;
+  }
+  .m-tira .c.perdida::after {
+    top: 3px;
+    right: 3px;
   }
   .m-tira .c.falla::after {
     top: 3px;

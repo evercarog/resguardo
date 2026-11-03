@@ -1103,7 +1103,7 @@
             {@const c = disp.cajas[grupoFoco.id]}
             <!-- 15rr: al pasar por un grupo, sus equipos o repositorios con su estado (lo mismo se lee en su nombre accesible). -->
             <div class="globo-grupo" style:left="{MARGEN + c.x + c.w + 10}px" style:top="{MARGEN + c.y}px" aria-hidden="true">
-              <p class="gg-t">{grupoFoco.tipo === "grupo" ? "Equipos" : "Repositorios"} · {grupoFoco.miembros.length}</p>
+              <p class="gg-t">{grupoFoco.tipo === "grupo" ? "Equipos" : grupoFoco.tipo === "espejo" ? "Espejos que llegan aquí" : "Repositorios"} · {grupoFoco.miembros.length}</p>
               <ul>
                 {#each grupoFoco.miembros.slice(0, 12) as m (m.nombre + (m.detalle ?? "") + (m.href ?? ""))}
                   {@const St = ESTADO[m.tono]}
@@ -1115,7 +1115,7 @@
                 {/each}
               </ul>
               {#if grupoFoco.miembros.length > 12}<p class="faint gg-mas">y {grupoFoco.miembros.length - 12} más</p>{/if}
-              <p class="faint gg-mas">Pulsa para desplegar.</p>
+              {#if grupoFoco.grupo}<p class="faint gg-mas">Pulsa para desplegar.</p>{/if}
             </div>
           {/if}
         </div>
@@ -1992,10 +1992,18 @@
     display: none;
   }
   @media (max-width: 640px) {
+    /* 16r: el menú se coloca respecto a la fila de herramientas (no al botón, que puede
+       estar a la derecha): así no se sale de la pantalla a 375 px. */
+    .m-herr {
+      position: relative;
+    }
+    .capas {
+      position: static;
+    }
     .capas-menu {
       right: auto;
       left: 0;
-      width: min(280px, calc(100vw - 48px));
+      width: min(280px, 100%);
     }
   }
 </style>

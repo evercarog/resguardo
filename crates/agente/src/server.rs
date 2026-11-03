@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 pub const TASK_NAME: &str = "Resguardo Servidor de copias";
 /// Con `resguardo-agente.exe`, otros nombres: la tarea y la regla de la app
 /// de escritorio (si también está instalada) no se tocan.
-const TASK_NAME_AGENTE: &str = "Resguardo Agente Servidor de copias";
+pub(crate) const TASK_NAME_AGENTE: &str = "Resguardo Agente Servidor de copias";
 
 pub fn nombre_tarea() -> &'static str {
     if crate::agent::is_managed_agent() {

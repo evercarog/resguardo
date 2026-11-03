@@ -31,6 +31,8 @@
   import EditorMarca from "$lib/componentes/EditorMarca.svelte";
   import CambiarClaveAdmin from "$lib/componentes/CambiarClaveAdmin.svelte";
   import { equiposDelCambio, pendientesDeCambio } from "$lib/cambioClave";
+  import CerrarSesionesDe from "$lib/componentes/CerrarSesionesDe.svelte";
+  import { LogOut } from "@lucide/svelte";
 
   let miembros = $state<Miembro[] | null>(null);
   let errorMiembros = $state("");
@@ -46,6 +48,8 @@
   let errorRest = $state("");
   let ocupadoRest = $state(false);
   let codigoRest = $state<CodigoRestablecimiento | null>(null);
+  // 16k: el propietario del servidor cierra las sesiones de otra persona.
+  let cerrarSesionesDe = $state<Miembro | null>(null);
   let espera = $state(false);
   let horas = $state(24);
   let claveAdmin = $state("");
@@ -202,6 +206,7 @@
   function menuDe(m: Miembro): AccionMenu[][] {
     return [
       puedeRestablecer(m) ? [{ texto: "Restablecer verificación en dos pasos", icono: ShieldOff, onclick: () => abrirRestablecer(m) }] : [],
+      app.cuenta?.superusuario && m.cuenta !== app.cuenta.id ? [{ texto: "Cerrar todas sus sesiones", icono: LogOut, onclick: () => (cerrarSesionesDe = m) }] : [],
       [{ texto: "Quitar del cliente", icono: Trash2, peligro: true, onclick: () => (quitar = m) }],
     ];
   }
@@ -504,6 +509,10 @@
       <BotonCargando class="btn btn-danger" cargando={quitando} textoCargando="Quitando…" onclick={confirmarQuitar}>Quitar</BotonCargando>
     </footer>
   </Modal>
+{/if}
+
+{#if cerrarSesionesDe}
+  <CerrarSesionesDe cuenta={cerrarSesionesDe.cuenta} nombre={cerrarSesionesDe.nombre} onclose={() => (cerrarSesionesDe = null)} />
 {/if}
 
 {#if restablecer}

@@ -26,6 +26,7 @@
   import {
     destinoAnotable,
     detalleDisco,
+    discosPropuestos,
     formaConjunto,
     HIPERVISORES,
     MAX_BYTES_INFRA,
@@ -42,6 +43,8 @@
   import { destinosParaPasos, detalleDestino } from "$lib/cadenas";
   import { catalogoDe, cargarCatalogo } from "$lib/catalogoDestinos.svelte";
   import { textoTipo, tipoEquipo } from "$lib/tipoEquipo";
+  import { equiposPorGrupo, servidoresParaElegir, servidorPropuesto, TEXTO_EQUIPOS_INFRA, textoFaltan } from "$lib/infraGrupos";
+  import { hrefSoporte } from "$lib/infraFicha";
   import { sedePorId } from "$lib/sedes";
   import { bytes, plural } from "$lib/formato";
   import { guardar as guardarTexto, leerTexto } from "$lib/recordar";
@@ -55,6 +58,9 @@
   const infra = $derived(actual.infra);
   const admin = $derived(!!actual.cliente && puede.administrar(actual.cliente.rol));
   const equipos = $derived(actual.equipos.filter((e) => e.modo !== "trasladado" && e.confirmado));
+  // 16g: agrupados por lo que se espera de cada uno (los de usuario, plegados).
+  const grupos = $derived(equiposPorGrupo(equipos, infra));
+  let usuariosAbiertos = $state(false);
   const destinos = $derived(destinosParaPasos(actual.equipos, catalogoDe(c)));
 
   // Lo que la persona dijo «Ahora no» se recuerda por persona (en este navegador).
@@ -171,6 +177,13 @@
   function aceptarServidor(p: Propuesta) {
     if (p.servidor) editando = { s: p.servidor, nuevo: true, asignar: p.equipo.id };
   }
+  /** 16g: un equipo de usuario que sí aloja algo (máquinas virtuales, un almacén): anotarlo como servidor, con lo que ve. */
+  function anotarComoServidor(e: (typeof equipos)[number]) {
+    const p = propuestas([e], infra).find((x) => x.clase === "servidor");
+    const db = datosBasicos(e);
+    const s = p?.servidor ?? { ...vacio(), id: "", nombre: e.nombre, marca: db?.fabricante ?? null, modelo: db?.modelo ?? null, discos: discosPropuestos(e) };
+    editando = { s, nuevo: true, asignar: e.id };
+  }
   /** A2: añadir al servidor los discos que ve su equipo (para revisarlos y escribir el número de serie). */
   function aceptarDiscos(p: Propuesta) {
     const s = infra.servidores.find((x) => x.id === p.enServidor);
@@ -284,7 +297,7 @@
                 <span class="tile-ic" aria-hidden="true"><Server size={16} /></span>
                 <div class="srv-t">
                   <h3 id="srv-{s.id}">{s.nombre}</h3>
-                  <p class="faint">{[nombreHiper(s.hipervisor) ?? "Sin hipervisor", [s.marca, s.modelo].filter(Boolean).join(" "), sede?.nombre].filter(Boolean).join(" · ")}</p>
+                  <p class="faint">{[nombreHiper(s.hipervisor) ?? "Sin hipervisor", [s.marca, s.modelo].filter(Boolean).join(" "), s.serie ? `S/N ${s.serie}` : null, s.inventario ? `inventario ${s.inventario}` : null, sede?.nombre].filter(Boolean).join(" · ")}</p>
                 </div>
                 {#if admin}
                   <div class="srv-acc">
@@ -300,7 +313,7 @@
                   {#each s.discos as d (d.id)}
                     <li>
                       <HardDrive size={14} aria-hidden="true" />
-                      <span class="cj-n">{d.nombre}</span>
+                      <a class="cj-n link" href={hrefSoporte(c, s.id, "disco", d.id)}>{d.nombre}</a>
                       {#if detalleDisco(d)}<span class="faint">{detalleDisco(d)}</span>{/if}
                       {#if d.serie}<span class="faint mono serie">S/N {d.serie}</span>{/if}
                       {#if d.estado === "averiado"}<span class="badge tone-bad"><TriangleAlert size={12} />Averiado</span>{:else if d.estado === "aviso"}<span class="badge tone-warn"><TriangleAlert size={12} />Con avisos</span>{:else if d.estado === "bien"}<span class="badge tone-ok"><Check size={12} />Bien</span>{/if}
@@ -315,7 +328,7 @@
                     {@const Ic = x.estado ? ICONO_ESTADO[x.estado] : Layers}
                     <li>
                       <Layers size={14} aria-hidden="true" />
-                      <span class="cj-n">{x.nombre}</span>
+                      <a class="cj-n link" href={hrefSoporte(c, s.id, "conjunto", x.id)}>{x.nombre}</a>
                       <span class="faint">{TIPOS_CONJUNTO.find((t) => t.id === x.tipo)?.nombre ?? x.tipo}{x.miembros?.length ? `${x.tipo === "disco" ? ":" : " de"} ${miembrosDe(s, x)}` : x.discos ? ` · ${plural(x.discos, "disco", "discos")}` : ""}{x.capacidad ? ` · ${bytes(x.capacidad)}` : ""}</span>
                       {#if x.estado === "degradado"}<span class="badge tone-warn"><Ic size={12} />Degradado</span>{:else if x.estado === "reconstruyendo"}<span class="badge tone-info"><Ic size={12} />Reconstruyendo</span>{:else if x.estado === "bien"}<span class="badge tone-ok"><Ic size={12} />Bien</span>{/if}
                     </li>
@@ -346,8 +359,43 @@
 
     {#if infra.servidores.length}
       <section class="card lista" id="equipos" aria-labelledby="t-equipos-srv">
-        <h2 class="section-title fila-t" id="t-equipos-srv">Equipos</h2>
-        {#each equipos as e (e.id)}
+        <h2 class="section-title fila-t" id="t-equipos-srv">Equipos {#if grupos.faltan}<span class="badge tone-warn">{grupos.faltan} por anotar</span>{/if}</h2>
+        <p class="faint intro">{TEXTO_EQUIPOS_INFRA}</p>
+        {#if textoFaltan(grupos.faltan)}<p class="faltan" data-testid="infra-faltan">{textoFaltan(grupos.faltan)}</p>{/if}
+        {#if grupos.virtual.length}
+          <h3 class="grupo-t">Máquinas virtuales y contenedores <span class="faint cuenta">· {grupos.virtual.length}</span></h3>
+          {#each grupos.virtual as e (e.id)}{@render filaEquipo(e, true)}{/each}
+        {/if}
+        {#if grupos.servidor.length}
+          <h3 class="grupo-t">Servidores físicos <span class="faint cuenta">· {grupos.servidor.length}</span></h3>
+          {#each grupos.servidor as e (e.id)}{@render filaEquipo(e, false)}{/each}
+        {/if}
+        {#if grupos.usuario.length}
+          <h3 class="grupo-t">
+            <button class="btn btn-ghost btn-sm plegar" aria-expanded={usuariosAbiertos} onclick={() => (usuariosAbiertos = !usuariosAbiertos)} data-testid="infra-usuarios">
+              {#if usuariosAbiertos}<ChevronDown size={14} />{:else}<ChevronRight size={14} />{/if}Equipos de usuario <span class="faint cuenta">· {grupos.usuario.length}</span>
+            </button>
+          </h3>
+          {#if usuariosAbiertos || grupos.usuario.some((e) => e.id === preEquipo)}
+            {#each grupos.usuario as e (e.id)}
+              <div class="fila asignar" class:resaltado={preEquipo === e.id} id="fila-e-{e.id}">
+                <span class="as-n"><Monitor size={14} aria-hidden="true" /><a class="link" href="/c/{c}/equipos/{e.id}">{e.nombre}</a><span class="faint">{tipoEquipo(e).clase === "fisico" ? "Es su propio equipo" : textoTipo(tipoEquipo(e))}</span></span>
+                {#if admin}
+                  <span class="as-c">
+                    <button class="btn btn-sm btn-ghost" disabled={guardando} onclick={() => anotarComoServidor(e)}><Server size={14} />Anotarlo como servidor</button>
+                    <select class="input input-sm" aria-label="O está en un servidor físico ({e.nombre})" value="" onchange={(ev) => ev.currentTarget.value && asignar("equipos", e.id, { servidor: ev.currentTarget.value, donde: "" }, e.nombre)}>
+                      <option value="">O está en…</option>
+                      {#each infra.servidores as s (s.id)}<option value={s.id}>{s.nombre}</option>{/each}
+                    </select>
+                  </span>
+                {/if}
+              </div>
+            {/each}
+          {/if}
+        {/if}
+      </section>
+
+      {#snippet filaEquipo(e: (typeof equipos)[number], virtual: boolean)}
           {@const k = `equipos:${e.id}`}
           {@const ya = infra.equipos[e.id]}
           {@const a = elegido(k, ya)}
@@ -356,13 +404,17 @@
           {@const vols = datosBasicos(e)?.discos ?? []}
           {@const srvYa = infra.servidores.find((s) => s.id === ya?.servidor)}
           {@const abierto = volumenesAbiertos.has(e.id)}
+          {@const propuesto = virtual && !ya ? servidorPropuesto(e, infra) : null}
           <div class="fila asignar" class:resaltado={preEquipo === e.id} id="fila-e-{e.id}">
             <span class="as-n"><Monitor size={14} aria-hidden="true" /><a class="link" href="/c/{c}/equipos/{e.id}">{e.nombre}</a><span class="faint">{textoTipo(tipoEquipo(e))}</span></span>
             {#if admin}
               <span class="as-c">
+                {#if propuesto && !a.servidor}
+                  <button class="btn btn-sm btn-primary" disabled={guardando} onclick={() => asignar("equipos", e.id, { servidor: propuesto.id, donde: "" }, e.nombre)}><Check size={14} />En «{propuesto.nombre}»</button>
+                {/if}
                 <select class="input input-sm" aria-label="Servidor físico de {e.nombre}" value={a.servidor} onchange={(ev) => elegir(k, { servidor: ev.currentTarget.value }, ya)}>
-                  <option value="">Sin anotar</option>
-                  {#each infra.servidores as s (s.id)}<option value={s.id}>{s.nombre}</option>{/each}
+                  <option value="">{virtual ? "¿En qué servidor físico está?" : "Es su propio equipo"}</option>
+                  {#each servidoresParaElegir(e, infra) as s (s.id)}<option value={s.id}>{s.nombre}</option>{/each}
                 </select>
                 {#if srv && (srv.conjuntos.length || srv.discos.length)}
                   <select class="input input-sm" aria-label="Discos de {e.nombre}" value={a.donde} onchange={(ev) => elegir(k, { donde: ev.currentTarget.value }, ya)}>
@@ -375,7 +427,7 @@
                 {/if}
               </span>
             {:else}
-              <span class="faint">{srvYa?.nombre ?? "Sin anotar"}{srvYa && textoDonde(srvYa, ya) ? ` · ${textoDonde(srvYa, ya)}` : ""}</span>
+              <span class="faint">{srvYa?.nombre ?? (virtual ? "Falta decir en qué servidor está" : "Es su propio equipo")}{srvYa && textoDonde(srvYa, ya) ? ` · ${textoDonde(srvYa, ya)}` : ""}</span>
             {/if}
           </div>
           {#if admin && abierto && srvYa && !cambia}
@@ -393,8 +445,7 @@
               {/each}
             </ul>
           {/if}
-        {/each}
-      </section>
+      {/snippet}
 
       <section class="card lista" id="destinos" aria-labelledby="t-destinos-srv">
         <h2 class="section-title fila-t" id="t-destinos-srv">Destinos y zonas</h2>
@@ -593,6 +644,25 @@
   }
   .serie {
     font-size: var(--fs-xs);
+  }
+  /* 16g: grupos de la lista de equipos. */
+  .lista > .intro,
+  .faltan {
+    padding: 0 var(--sp-4);
+  }
+  .faltan {
+    margin: 0 0 var(--sp-2);
+    font-weight: 600;
+  }
+  .grupo-t {
+    margin: var(--sp-3) 0 var(--sp-1);
+    padding: 0 var(--sp-4);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+  }
+  .plegar {
+    padding-left: 0;
+    font-weight: 600;
   }
   .fila-t {
     padding: var(--sp-4) var(--sp-4) var(--sp-2);

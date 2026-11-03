@@ -27,23 +27,7 @@ export function limpiarEtiqueta(t: string): string | null {
   return x;
 }
 
-/**
- * El filtro por etiqueta, compartido entre Equipos, Avisos y Estado (por
- * cliente). Se recuerda en este navegador: al volver, sigue puesto.
- */
-const filtro = $state({ cliente: "", etiqueta: "" });
-
-export const filtroEtiqueta = {
-  get valor(): string {
-    if (filtro.cliente !== actual.id) return actual.id ? leerTexto(`etiqueta.${actual.id}`) : "";
-    return filtro.etiqueta;
-  },
-  poner(v: string) {
-    filtro.cliente = actual.id;
-    filtro.etiqueta = v;
-    guardar(`etiqueta.${actual.id}`, v);
-  },
-};
+// 16e: el filtro por etiquetas está ahora en `filtrosEquipos.svelte.ts` (varias a la vez).
 
 /** «Agrupar por etiqueta» en Estado y Equipos (por cliente, recordado en este navegador). */
 const agrupar = $state({ cliente: "", si: false });

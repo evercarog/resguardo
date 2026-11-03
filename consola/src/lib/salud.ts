@@ -2,6 +2,7 @@
 // Un estado nunca va solo con color: siempre icono y texto (docs/diseno.md).
 import type { CopiaResumen, Equipo, EstadoOrden } from "./tipos";
 import { cuandoFrase, relativo } from "./formato";
+import { reglasDe, ultimaVez } from "./horario";
 
 export type Tono = "ok" | "warn" | "bad" | "info" | "paused" | "neutral";
 
@@ -15,9 +16,35 @@ export interface Salud {
 const DIA = 86_400_000;
 const minuscula = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
 
+/** 16y: el margen tras una hora programada antes de llamar atrasada a una copia (el mismo en Estado y en cada copia). */
+export const MARGEN_ATRASO = 2 * 3600_000;
+
+/**
+ * 16y: ¿atrasada según su horario? La última hora programada que pasó hace más del margen es
+ * posterior a la última copia (no la última hora sin más: con un horario cada hora, esa siempre
+ * es de hace menos del margen y la copia nunca salía atrasada). null: sin horario que mirar.
+ */
+export function atrasadaPorHorario(horario: CopiaResumen["horario"], ultima: string, ahora = Date.now()): boolean | null {
+  if (!horario || typeof horario === "string") return null;
+  const reglas = reglasDe(horario);
+  if (!reglas.length) return null;
+  const slot = ultimaVez(reglas, ahora - MARGEN_ATRASO);
+  return slot == null ? false : Date.parse(ultima) < slot;
+}
+
+/**
+ * ¿Atrasada? (Estado, la lista de equipos, el mapa de todos los clientes.) 16y: la misma regla
+ * que el estado de cada copia (`atrasada` en lib/copia.ts) con lo que trae el resumen: una copia
+ * que nunca se hizo no va atrasada (sale «Sin copias todavía»); sin horario que leer, la
+ * «Próxima» que dijo el equipo, pasada de más de una hora.
+ */
 export function copiaAtrasada(c: CopiaResumen, ahora = Date.now()) {
-  // Plan 0.8.0, F1: una copia completada o solo a mano nunca va atrasada.
-  return c.activa !== false && !c.completada && !c.a_mano && !!c.proxima && Date.parse(c.proxima) < ahora - 3600_000;
+  // Plan 0.8.0, F1: una copia completada o solo a mano nunca va atrasada; 15hh: en pausa, tampoco.
+  if (c.activa === false || c.completada || c.a_mano || c.pausa) return false;
+  if (!c.ultima?.cuando) return false;
+  const porHorario = atrasadaPorHorario(c.horario, c.ultima.cuando, ahora);
+  if (porHorario != null) return porHorario;
+  return !!c.proxima && Date.parse(c.proxima) < ahora - 3600_000;
 }
 
 /** ¿Copias automáticas en pausa? (`pausado_hasta`: una fecha o "indefinido"). */

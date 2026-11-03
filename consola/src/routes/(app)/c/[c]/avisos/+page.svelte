@@ -20,11 +20,13 @@
   import Tiempo from "$lib/componentes/Tiempo.svelte";
   import Vacio from "$lib/componentes/Vacio.svelte";
   import FiltroEtiquetas from "$lib/componentes/FiltroEtiquetas.svelte";
-  import { filtroEtiqueta, pasaFiltro } from "$lib/etiquetas.svelte";
+  import { filtrosEquipos } from "$lib/filtrosEquipos.svelte";
+  import { pasaEtiquetas } from "$lib/filtrosEquipos";
   // «Pulsar para ver más»: cada aviso lleva a la vuelta o al repositorio que lo explica.
   import { cargarInformes, ultimos } from "$lib/informes.svelte";
   import { destinoAviso } from "$lib/detalle";
   import { sinMarcadores } from "$lib/textosEquipo";
+  import { agruparAvisos } from "$lib/urgentes";
   import { datosBasicos, reinicioAntes } from "$lib/datosBasicos";
   import { tip } from "$lib/tooltip";
   import "$lib/componentes/detalle/pulsable.css";
@@ -117,15 +119,21 @@
   };
   const info = (a: Aviso) => INFO[a.tipo] ?? { texto: a.tipo, tono: "neutral" as Tono, icono: CircleAlert, que: "", accion: () => null };
   const equipo = (id: string | null) => actual.equipos.find((e) => e.id === id);
-  // Con una etiqueta elegida, solo los avisos de sus equipos (los del cliente en general, no).
-  const visibles = $derived((avisos ?? []).filter((a) => !filtroEtiqueta.valor || pasaFiltro(equipo(a.equipo), filtroEtiqueta.valor)));
+  // Con etiquetas elegidas (las mismas que en Equipos y Estado), solo los avisos de sus equipos.
+  // Los del cliente en general (sin equipo: intentos fallidos, la clave de administración
+  // cambiada…) se ven siempre: una etiqueta no debe esconderlos.
+  const visibles = $derived.by(() => {
+    const f = filtrosEquipos.valor;
+    return (avisos ?? []).filter((a) => !a.equipo || !f.etiquetas.length || pasaEtiquetas(equipo(a.equipo), f.etiquetas, f.modo));
+  });
   const sinVer = $derived(visibles.filter((a) => !a.visto_por));
   const urgentes = $derived(sinVer.filter((a) => info(a).tono === "bad").length);
 
   /** Los grupos: por gravedad (urgente, atención, ya vistos) o por equipo (y los del cliente). */
   const grupos = $derived.by(() => {
-    type Grupo = { id: string; titulo: string; tono: Tono; avisos: Aviso[]; href?: string };
-    const orden = (xs: Aviso[]) => [...xs].sort((a, b) => Date.parse(b.creado) - Date.parse(a.creado));
+    type Grupo = { id: string; titulo: string; tono: Tono; avisos: (Aviso & { repetidos: Aviso[] })[]; href?: string };
+    // 16o: los repetidos (mismo tipo y mismo motivo), en una sola fila.
+    const orden = (xs: Aviso[]) => agruparAvisos([...xs].sort((a, b) => Date.parse(b.creado) - Date.parse(a.creado)));
     if (agrupar === "gravedad") {
       return [
         { id: "bad", titulo: "Urgente", tono: "bad" as Tono, avisos: orden(visibles.filter((a) => !a.visto_por && info(a).tono === "bad")) },
@@ -140,11 +148,13 @@
       .sort((a, b) => ["bad", "warn", "neutral"].indexOf(a.tono) - ["bad", "warn", "neutral"].indexOf(b.tono) || a.titulo.localeCompare(b.titulo));
   });
 
-  async function visto(a: Aviso) {
+  async function visto(a: Aviso & { repetidos?: Aviso[] }) {
     marcando = new Set([...marcando, a.id]);
     try {
-      await api.marcarVisto(actual.id, a.id);
-      avisar(`Marcado como visto: «${info(a).texto}»${equipo(a.equipo) ? ` en ${equipo(a.equipo)!.nombre}` : ""}.`);
+      // 16o: una fila con repetidos los marca todos.
+      for (const x of [a, ...(a.repetidos ?? [])]) await api.marcarVisto(actual.id, x.id);
+      const n = 1 + (a.repetidos?.length ?? 0);
+      avisar(n > 1 ? `Marcados como vistos: ${n} avisos «${info(a).texto}».` : `Marcado como visto: «${info(a).texto}»${equipo(a.equipo) ? ` en ${equipo(a.equipo)!.nombre}` : ""}.`);
       await Promise.all([cargar(), cargarCliente(actual.id, { silencioso: true })]);
     } catch (e) {
       fallo(e);
@@ -219,7 +229,7 @@
           <h2 id="g-{g.id}">
             <span class="dot" style="--tone: var(--{g.tono})" aria-hidden="true"></span>
             {#if g.href}<a class="g-enlace" href={g.href}>{g.titulo}</a>{:else}{g.titulo}{/if}
-            <span class="count">· {g.avisos.length}</span>
+            <span class="count">· {g.avisos.reduce((n, a) => n + 1 + a.repetidos.length, 0)}</span>
           </h2>
         </div>
         <div class="card p-0 lista">
@@ -233,14 +243,19 @@
               <span class="fila-texto">
                 <span class="fila-titulo">{i.texto}{#if eq && agrupar === "gravedad"}<a class="eq" href="/c/{c}/equipos/{eq.id}"><Monitor size={12} />{eq.nombre}</a>{/if}</span>
                 {#if rel}<a class="mensaje pulsable" href={rel.href} use:tip={"Ver el detalle"}>{sinMarcadores(a.mensaje)}</a>{:else}<span class="mensaje">{sinMarcadores(a.mensaje)}</span>{/if}
+                {#if a.repetidos.length}
+                  {@const otros = [...new Set(a.repetidos.map((x) => equipo(x.equipo)?.nombre).filter((x): x is string => !!x && x !== eq?.nombre))]}
+                  <!-- 16o: los repetidos, juntos («3 veces por lo mismo»). -->
+                  <span class="fila-sub repetidos">{plural(a.repetidos.length + 1, "vez", "veces")} por lo mismo{#if otros.length}{" · también en "}{otros.slice(0, 4).join(", ")}{otros.length > 4 ? ` y ${otros.length - 4} más` : ""}{/if}</span>
+                {/if}
                 {#if i.que && !a.visto_por}<span class="fila-sub">{i.que}</span>{/if}
                 <!-- 14uu: una copia que falló justo después de arrancar el equipo (suele ser eso). -->
                 {#if a.tipo === "copia_fallida" && reinicioAntes(datosBasicos(equipo(a.equipo)), a.creado)}<span class="fila-sub reinicio"><Power size={12} />{reinicioAntes(datosBasicos(equipo(a.equipo)), a.creado)}</span>{/if}
                 <span class="fila-sub cuando"><Tiempo iso={a.creado} />{#if a.visto_por}<span class="visto-por"><Check size={12} />Visto por {a.visto_por}</span>{/if}</span>
               </span>
               <span class="acciones">
-                {#if rel}<a class="btn btn-sm btn-ghost" href={rel.href}>{rel.texto}</a>{/if}
-                {#if acc && !a.visto_por}<a class="btn btn-sm" href={acc.href}>{acc.texto}</a>{/if}
+                <!-- 16o: un solo «qué hago»: el sitio exacto si se sabe (esa copia, ese repositorio); si no, el general. -->
+                {#if !a.visto_por && (rel ?? acc)}<a class="btn btn-sm" href={(rel ?? acc)!.href}>{(rel ?? acc)!.texto}</a>{:else if rel}<a class="btn btn-sm btn-ghost" href={rel.href}>{rel.texto}</a>{/if}
                 {#if !a.visto_por && puede.ordenar(actual.cliente?.rol)}
                   <button class="btn btn-sm btn-ghost" disabled={marcando.has(a.id) || todos} onclick={() => visto(a)}><Check size={14} />{marcando.has(a.id) ? "Marcando…" : "Visto"}</button>
                 {/if}

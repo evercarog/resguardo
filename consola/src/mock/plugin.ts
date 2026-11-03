@@ -401,7 +401,7 @@ const rutas: Ruta[] = [
       return { anillo: a };
     },
   ],
-  ["GET", /^\/api\/servidor$/, () => ({ version: "0.1.0 (simulado)", nombre: "Resguardo Server", identidad: estado.servidor.identidad, huella_ca: HUELLA_CA, inicializado: estado.servidor.inicializado, instalador_agente: instaladorMock, agente_local: true, codigo_navegador: true, max_descarga: 2 * 1024 * 1024 * 1024 })],
+  ["GET", /^\/api\/servidor$/, () => ({ version: "0.1.0 (simulado)", nombre: "Resguardo Server", identidad: estado.servidor.identidad, huella_ca: HUELLA_CA, inicializado: estado.servidor.inicializado, instalador_agente: instaladorMock, agente_local: true, codigo_navegador: true, max_descarga: 2 * 1024 * 1024 * 1024, sesion: { recordar_dias: plazosMock.recordar_dias, inactividad_horas: plazosMock.inactividad_horas } })],
 
   ["GET", /^\/api\/servidor\/respaldo$/, (ctx) => respaldoDe(ctx)],
   [
@@ -461,6 +461,69 @@ const rutas: Ruta[] = [
       const r = cuenta.restablecida;
       if (r) return { necesita: "restablecimiento", restablecida: { cuando: r.cuando, por: r.por }, caducado: r.caduca <= Date.now() };
       return cuenta.totp ? { necesita: "totp", passkeys: passkeysDe(cuenta.id).length } : { necesita: "alta_totp", totp: totpDe(cuenta.correo) };
+    },
+  ],
+  // 16h: «Este equipo no llega a esa consola» (de esta consola, por cliente).
+  ["GET", /^\/api\/clientes\/([^/]+)\/no-llega$/, (_ctx, [c]) => noLlegaMock.get(c) ?? {}],
+  [
+    "PUT",
+    /^\/api\/clientes\/([^/]+)\/no-llega$/,
+    (ctx, [c]) => {
+      sesionDe(ctx);
+      const b = ctx.cuerpo as { equipo?: string; consola?: string; motivo?: string | null; quitar?: boolean };
+      if (!b.equipo || !b.consola || !estado.equipos.some((e) => e.id === b.equipo && e.cliente === c)) throw err(422, "datos", "Equipo o consola no válidos.");
+      if ((b.motivo ?? "").length > 200) throw err(422, "datos", "El motivo es demasiado largo (hasta 200).");
+      const m = noLlegaMock.get(c) ?? {};
+      const de = { ...(m[b.equipo] ?? {}) };
+      if (b.quitar) delete de[b.consola];
+      else de[b.consola] = { motivo: b.motivo?.trim() || null, por: sesionDe(ctx).nombre, cuando: new Date().toISOString() };
+      if (Object.keys(de).length) m[b.equipo] = de;
+      else delete m[b.equipo];
+      noLlegaMock.set(c, m);
+      return m;
+    },
+  ],
+  // 16k: las sesiones de la cuenta (la actual y dos de ejemplo) y sus plazos.
+  ["GET", /^\/api\/cuenta\/sesiones$/, (ctx) => ({ sesiones: sesionesMockDe(sesionDe(ctx).id, ctx.token ?? ""), puede_cerrar: true, puede_desde: null })],
+  [
+    "POST",
+    /^\/api\/cuenta\/sesiones\/cerrar$/,
+    (ctx) => {
+      const cuenta = sesionDe(ctx);
+      const b = ctx.cuerpo as { ids?: string[]; otras?: boolean; contrasena?: string; codigo?: string };
+      if (b.contrasena !== cuenta.contrasena || !/^\d{6}$/.test(String(b.codigo ?? ""))) throw err(401, "credenciales", "La contraseña o el código no son correctos.");
+      const otras = sesionesMockDe(cuenta.id, ctx.token ?? "").filter((s) => !s.actual && (b.otras || (b.ids ?? []).includes(s.id)));
+      for (const s of otras) sesionesCerradasMock.add(s.id);
+      return { cerradas: otras.length };
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/servidor\/cuentas\/([^/]+)\/sesiones\/cerrar$/,
+    (ctx, [otra]) => {
+      const yo = sesionDe(ctx);
+      const b = ctx.cuerpo as { contrasena?: string; codigo?: string };
+      if (!yo.superusuario) throw err(403, "prohibido", "Solo el propietario del servidor.");
+      if (b.contrasena !== yo.contrasena || !/^\d{6}$/.test(String(b.codigo ?? ""))) throw err(401, "credenciales", "La contraseña o el código no son correctos.");
+      let n = 0;
+      for (const [t, s] of estado.sesiones) {
+        if (s.cuenta === otra) {
+          estado.sesiones.delete(t);
+          n++;
+        }
+      }
+      return { cerradas: n };
+    },
+  ],
+  ["GET", /^\/api\/servidor\/sesiones$/, () => ({ plazos: plazosMock, predeterminados: { inactividad_horas: 8, maximo_horas: 24, recordar_dias: 14 } })],
+  [
+    "PUT",
+    /^\/api\/servidor\/sesiones$/,
+    (ctx) => {
+      const b = ctx.cuerpo as typeof plazosMock;
+      const inactividad_horas = Math.min(24, Math.max(1, Math.round(Number(b.inactividad_horas) || 8)));
+      plazosMock = { inactividad_horas, maximo_horas: Math.min(168, Math.max(inactividad_horas, Math.round(Number(b.maximo_horas) || 24))), recordar_dias: Math.min(30, Math.max(0, Math.round(Number(b.recordar_dias) || 0))) };
+      return { plazos: plazosMock };
     },
   ],
   // 0.8.1 (H3): llaves de acceso. El simulador no comprueba firmas (eso lo prueba el servidor
@@ -646,8 +709,8 @@ const rutas: Ruta[] = [
           equipos: estado.equipos.filter((e) => e.cliente === c.id).map(publico),
           avisos_abiertos: estado.avisos.filter((a) => a.cliente === c.id && a.abierto).length,
           pendientes: estado.ordenes.filter((o) => o.cliente === c.id && o.estado === "pendiente" && o.not_before && Date.parse(o.not_before) > Date.now()).length,
-          informes: estado.equipos.filter((e) => e.cliente === c.id && e.informes[0]).map((e) => ({ equipo: e.id, ...e.informes[0] })),
-          informes_completos: true,
+          // 16q: resumidos y con tope, como el servidor (api/panel.rs, `resumir_informe`).
+          ...informesDelPanel(c.id),
           organizacion: organizacionDe(c.id),
           // 0.8.2 (A4): la infraestructura anotada (para el mapa de todos los clientes).
           infra: infraDe(c.id).servidores.length ? infraDe(c.id) : null,
@@ -1458,7 +1521,13 @@ const rutas: Ruta[] = [
     (ctx, [c]) => {
       miembro(ctx, c);
       // El último informe de cada equipo (v1.8); los que no tienen, no salen.
-      return estado.equipos.filter((e) => e.cliente === c && e.informes[0]).map((e) => ({ equipo: e.id, ...e.informes[0] }));
+      // 16x (7): con `desde`, solo los que llegaron en ese segundo o después (como el servidor).
+      const d = ctx.url.searchParams.get("desde");
+      const desde = d ? Math.floor(Date.parse(d) / 1000) : null;
+      if (d && !Number.isFinite(desde)) throw err(422, "datos", "Fecha no válida.");
+      return estado.equipos
+        .filter((e) => e.cliente === c && e.informes[0] && (desde === null || Math.floor(Date.parse(e.informes[0].recibido) / 1000) >= desde))
+        .map((e) => ({ equipo: e.id, ...e.informes[0] }));
     },
   ],
   [
@@ -1935,6 +2004,42 @@ const rutas: Ruta[] = [
 
 const SIN_CUERPO = Symbol("sin cuerpo");
 
+/**
+ * 16q: el informe resumido del panel, como el servidor (`api/panel.rs`, `resumir_informe`):
+ * 60 versiones y 60 vueltas de 15 días por repositorio, y 4 MB en total por respuesta.
+ * (El tope es de toda la respuesta; aquí, por cliente: con un solo cliente grande, lo mismo.)
+ */
+function informesDelPanel(cliente: string) {
+  const corto = (t: unknown, n: number) => (typeof t === "string" && t.length > n ? `${t.slice(0, n)}…` : (t ?? null));
+  const desde = Date.now() - 15 * 86_400_000;
+  let quedan = 4 * 1024 * 1024;
+  let completos = true;
+  const informes: unknown[] = [];
+  for (const e of estado.equipos.filter((x) => x.cliente === cliente && x.informes[0])) {
+    const d = e.informes[0].datos as unknown as Record<string, unknown>;
+    const repos = ((d.repos as Record<string, unknown>[] | undefined) ?? []).slice(0, 50).map((r) => {
+      const vs = ((r.versiones as Record<string, unknown>[] | undefined) ?? []).slice(0, 60).map((v) => ({ id: v.id, hora: v.hora, copia: v.copia, total_bytes: v.total_bytes, anadido: v.anadido, anadido_empaquetado: v.anadido_empaquetado, etiquetas: [] }));
+      const todas = (r.ejecuciones as Record<string, unknown>[] | undefined) ?? [];
+      const es = todas
+        .filter((x) => Date.parse(String(x.hora)) >= desde)
+        .slice(0, 60)
+        .map((x) => ({ hora: x.hora, copia: x.copia, resultado: x.resultado, duracion_s: x.duracion_s, anadido: x.anadido, mensaje_corto: corto(x.mensaje_corto, 160) }));
+      const fuera = vs.length < ((r.versiones as unknown[]) ?? []).length || es.length < todas.length;
+      return { id: r.id, nombre: r.nombre, solo_lectura: r.solo_lectura, versiones_leidas: r.versiones_leidas ?? null, espacio: r.espacio ?? null, verificacion: r.verificacion ?? null, prueba_restauracion: r.prueba_restauracion ?? null, externa: r.externa ?? null, proteccion: r.proteccion ?? null, versiones: vs, ejecuciones: es, ...(fuera || r.recortado ? { recortado: true } : {}) };
+    });
+    const copias = ((d.copias as Record<string, unknown>[] | undefined) ?? []).slice(0, 50).map((k) => ({ id: k.id, repo: k.repo, nombre: k.nombre, estado: k.estado, cuando: k.cuando, bytes: k.bytes, archivos: k.archivos, duracion_s: k.duracion_s, mensaje: corto(k.mensaje, 200) }));
+    const x = { equipo: e.id, recibido: e.informes[0].recibido, datos: { version: d.version, proximas: d.proximas, disco: d.disco, copias, repos } };
+    const n = JSON.stringify(x).length;
+    if (n <= quedan) {
+      quedan -= n;
+      informes.push(x);
+    } else completos = false;
+  }
+  return { informes, informes_completos: completos };
+}
+/** 16q: sin la latencia inventada con `MOCK_LATENCIA=0`. */
+const LATENCIA = process.env.MOCK_LATENCIA !== "0";
+
 /** Una ficha de este servidor (se muestra una vez; se guarda su hash). */
 function darFicha(cliente: string, usos: number, dias: number) {
   const ficha = aB64(randomBytes(24)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -2016,7 +2121,8 @@ export function mockApi(): Plugin {
         // Latencia de una red de verdad (600–1500 ms), para ver los esqueletos y la barra de carga;
         // las sesiones y el relé, más rápidos (ya tienen su propia espera).
         const rapida = /\/(sesiones|relevos)\//.test(url.pathname) || url.pathname === "/api/servidor";
-        await new Promise((r) => setTimeout(r, rapida ? 120 + Math.random() * 180 : 600 + Math.random() * 900));
+        // 16q: MOCK_LATENCIA=0 para medir sin la espera inventada.
+        if (LATENCIA) await new Promise((r) => setTimeout(r, rapida ? 120 + Math.random() * 180 : 600 + Math.random() * 900));
         for (const [m, re, f] of rutas) {
           if (m !== metodo) continue;
           const x = re.exec(url.pathname);
@@ -2092,6 +2198,23 @@ function ajustesEtiquetasDe(c: string): T.AjusteEtiqueta[] {
  */
 const datosComunesMock = new Map<string, DatosComunesCliente>();
 /** 0.8.1 (H3): las llaves de acceso de cada cuenta (la de Ana con una de ejemplo). */
+// 16h: las marcas «no llega a esa consola» de cada cliente.
+const noLlegaMock = new Map<string, Record<string, Record<string, { motivo: string | null; por: string; cuando: string }>>>();
+// 16k: sesiones de ejemplo (además de la actual) y plazos.
+let plazosMock = { inactividad_horas: 8, maximo_horas: 24, recordar_dias: 14 };
+const sesionesCerradasMock = new Set<string>();
+function sesionesMockDe(cuenta: string, token: string) {
+  const ahora = Date.now();
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const actual = { id: `a${token.slice(0, 15).replace(/[^0-9a-f]/g, "0").padEnd(15, "0")}`, actual: true, navegador: "Chrome · Windows", ip: "192.0.2.10", creada: iso(ahora - 2 * 86_400_000), usada: iso(ahora), caduca: iso(ahora + 8 * 3_600_000), maximo: iso(ahora + 22 * 3_600_000), recordar: false, nueva: false };
+  const ejemplos = estado.cuentas.find((c) => c.id === cuenta)?.correo === "ana@ejemplo.com"
+    ? [
+        { id: "b0000000000000000000000000000001", actual: false, navegador: "Safari · iPhone", ip: "198.51.100.7", creada: iso(ahora - 5 * 86_400_000), usada: iso(ahora - 3 * 3_600_000), caduca: iso(ahora + 4 * 86_400_000), maximo: iso(ahora + 9 * 86_400_000), recordar: true, nueva: false },
+        { id: "b0000000000000000000000000000002", actual: false, navegador: "Firefox · Linux", ip: "203.0.113.25", creada: iso(ahora - 2 * 3_600_000), usada: iso(ahora - 40 * 60_000), caduca: iso(ahora + 7 * 3_600_000), maximo: iso(ahora + 22 * 3_600_000), recordar: false, nueva: true },
+      ]
+    : [];
+  return [actual, ...ejemplos.filter((s) => !sesionesCerradasMock.has(s.id))];
+}
 const passkeysMock = new Map<string, { ref: string; nombre: string; creada: string; usada: string | null; dominio: string }[]>();
 function passkeysDe(cuenta: string) {
   if (!passkeysMock.has(cuenta)) {

@@ -304,6 +304,18 @@ export const PREGUNTAS: Pregunta[] = [
     respuesta: ["Comprueba que está encendido y con red, y que el servicio «Resguardo Agente» está en marcha. En el equipo, el estado y el registro dicen qué pasa."],
     comando: "resguardo-agente estado",
   },
+  // 16z: un antivirus que pone el agente en cuarentena (lo quita con su servicio).
+  {
+    id: "si-antivirus",
+    si: "El antivirus lo bloqueó",
+    respuesta: [
+      "Algunos antivirus confunden Resguardo Agente con una amenaza (un falso positivo) y lo ponen en cuarentena: borran el programa y su servicio, y el equipo deja de responder, a menudo justo después de una copia. Lo ya copiado sigue a salvo.",
+      "Cómo verlo en Microsoft Defender: en Seguridad de Windows → Protección contra virus y amenazas → Historial de protección. En PowerShell como administrador, el comando de abajo lista las detecciones; en el Visor de eventos están en Microsoft-Windows-Windows Defender/Operational, sucesos 1116 (detectado) y 1117 (acción tomada).",
+      "Qué hacer: envía el archivo a Microsoft como falso positivo (microsoft.com/wdsi/filesubmission) y pon una exclusión solo para el programa: Add-MpPreference -ExclusionPath \"C:\\Program Files\\Resguardo Agente\\resguardo-agente.exe\". Luego vuelve a instalar la misma versión, sin código: la configuración del equipo se conserva y vuelve a conectarse solo.",
+      "Con otro antivirus, pon la misma exclusión (solo ese programa) desde su propia consola. Si despliegas por instalación por comandos, añade la exclusión antes de instalar. En Windows Server, Defender no pasa solo a modo pasivo cuando hay otro antivirus: puede haber dos vigilando a la vez.",
+    ],
+    comando: "Get-MpThreatDetection | Sort-Object InitialDetectionTime -Descending | Select-Object -First 5",
+  },
   {
     id: "si-dejar-consola",
     si: "Quiero sacar un equipo de una consola desde el propio equipo",
@@ -322,5 +334,21 @@ export const PREGUNTAS: Pregunta[] = [
     id: "si-movil",
     si: "Perdí el móvil del segundo paso",
     respuesta: ["Entra con uno de tus códigos de recuperación y, en «Mi cuenta», vuelve a configurar el segundo paso y genera códigos nuevos. Si tampoco los tienes, pide al propietario que la restablezca (Personas → menú de la persona → «Restablecer verificación en dos pasos»): te dará un código de un solo uso, válido 24 horas, para vincular el móvil nuevo al entrar. La de un propietario solo la puede restablecer el propietario del servidor."],
+  },
+  {
+    id: "si-sesion-movil",
+    si: "La sesión se me cierra muy seguido en el móvil",
+    respuesta: [
+      "Al entrar, marca «Recordar este dispositivo»: la sesión dura hasta 14 días (sin marcarlo, se cierra tras unas horas sin usarla). Hazlo solo en un móvil u ordenador tuyo.",
+      "Para entrar más rápido: añade una llave de acceso en «Mi cuenta» (la huella o el PIN del móvil en vez del código) y, en el navegador del móvil, «Añadir a pantalla de inicio» para abrir la consola como una app.",
+    ],
+  },
+  {
+    id: "si-sesion-desconocida",
+    si: "Veo una sesión que no reconozco",
+    respuesta: [
+      "En «Mi cuenta» → «Dónde tienes la sesión abierta», ciérrala con «Cerrar» (o «Cerrar en todos los demás») y cambia la contraseña. Te pedirá la contraseña y el código.",
+      "Una sesión abierta hace menos de 24 horas no puede cerrar las demás ni cambiar la contraseña: así, quien te robe la contraseña y el código puede mirar, pero no echarte. Hazlo desde un dispositivo donde ya tenías la sesión. Si perdiste el único, espera las 24 horas o pide al propietario del servidor que cierre tus sesiones.",
+    ],
   },
 ];

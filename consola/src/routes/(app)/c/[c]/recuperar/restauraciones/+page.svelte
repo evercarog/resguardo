@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ErrorCopia from "$lib/componentes/ErrorCopia.svelte";
   // Restauraciones (plan 0.8.0, E2: 13d, 14l): cada restauración de los equipos
   // del cliente (o de uno, `?equipo=`), con quién, cuándo, qué versión, desde
   // dónde, cuánto y cuánto tardó (el RTO real), su motivo y su ficha. Las anota
@@ -40,12 +41,18 @@
     type ConMotivo,
   } from "$lib/restauraciones";
   import AjustesRestauraciones from "$lib/componentes/AjustesRestauraciones.svelte";
+  import BarraTabla from "$lib/componentes/BarraTabla.svelte";
+  import VerMas from "$lib/componentes/VerMas.svelte";
+  import { casaBusqueda, enRango, SIN_RANGO, tanda, TANDA, textoFilas as textoFiltros, type Rango } from "$lib/tablas";
+  import { claveDia } from "$lib/lineaTiempo";
   import type { MotivoRestauracion, Restauraciones } from "$lib/tipos";
 
   let datos = $state<Restauraciones | null>(null);
   let error = $state("");
   const equipoFiltro = $derived(page.url.searchParams.get("equipo") ?? "");
-  let periodo = $state<"30" | "90" | "365" | "todo">("365");
+  // 16t: buscar, un rango de fechas claro y «Ver más» por tandas, como las demás listas largas.
+  let buscar = $state("");
+  let rango = $state<Rango>({ ...SIN_RANGO });
   let soloResultado = $state<"" | "ok" | "fallo">("");
   /** 15aa: reales, pruebas automáticas o pruebas a mano (nunca juntas: sus cifras van aparte). */
   let clase = $state<ClaseRestauracion>((page.url.searchParams.get("clase") as ClaseRestauracion | null) ?? "real");
@@ -73,7 +80,6 @@
   const nombreRepo = (eq: string, repo: string) => actual.equipos.find((e) => e.id === eq)?.resumen?.repositorios?.find((r) => r.id === repo)?.nombre ?? repo;
 
   const todas = $derived(datos ? juntar(datos) : []);
-  const desdeT = $derived(periodo === "todo" ? 0 : reloj.ahora - Number(periodo) * 86_400_000);
   const porClase = $derived({
     real: todas.filter((r) => claseRestauracion(r) === "real").length,
     prueba_auto: todas.filter((r) => claseRestauracion(r) === "prueba_auto").length,
@@ -81,8 +87,23 @@
   });
   const ok = (r: ConMotivo) => r.resultado === "ok";
   const lista = $derived(
-    todas.filter((r) => claseRestauracion(r) === clase && Date.parse(r.hora) >= desdeT && (!soloResultado || (soloResultado === "ok" ? ok(r) : !ok(r)))),
+    todas.filter(
+      (r) =>
+        claseRestauracion(r) === clase &&
+        enRango(r.hora, rango) &&
+        (!soloResultado || (soloResultado === "ok" ? ok(r) : !ok(r))) &&
+        casaBusqueda(buscar, nombreRepo(r.equipo, r.repo), nombreEquipo(r.equipo), textoQuien(r), r.motivoFinal ? textoMotivo(r.motivoFinal.tipo) : "", r.motivoFinal?.notas, textoDesde(r), r.version),
+    ),
   );
+  let limite = $state(TANDA);
+  $effect.pre(() => {
+    // Con otros filtros, se empieza otra vez por la primera tanda.
+    void [clase, buscar, rango, soloResultado, equipoFiltro];
+    limite = TANDA;
+  });
+  const enPantalla = $derived(tanda(lista, limite).visibles);
+  const diasCon = $derived(new Set(todas.filter((r) => claseRestauracion(r) === clase).map((r) => claveDia(Date.parse(r.hora)))));
+  const deLaClase = $derived(porClase[clase]);
   const cifras = $derived(estadisticas(lista));
   const conDuracion = $derived(lista.filter((r) => r.resultado === "ok" && typeof r.duracion_s === "number"));
   const desdeEspejo = $derived(lista.filter((r) => !!r.espejo).length);
@@ -99,7 +120,7 @@
       const r = ts.find((x) => x.tipo === "prueba_restauracion" && x.resultado !== "ok" && (!eq || x.equipo === eq));
       if (r) {
         clase = claseRestauracion(r);
-        periodo = "todo";
+        rango = { ...SIN_RANGO };
         abrir(r);
       }
     });
@@ -160,21 +181,27 @@
     {/each}
   </div>
 
-  <div class="filtros">
+  <BarraTabla
+    bind:buscar
+    placeholder="Buscar repositorio, equipo, quién o motivo"
+    {rango}
+    alElegirRango={(r) => (rango = r)}
+    ahora={reloj.ahora}
+    {diasCon}
+    cuenta={datos ? textoFiltros(lista.length, deLaClase, esPrueba ? "prueba" : "restauración", esPrueba ? "pruebas" : "restauraciones") : undefined}
+    hayMas={!!soloResultado || !!equipoFiltro}
+    limpiar={() => {
+      buscar = "";
+      rango = { ...SIN_RANGO };
+      soloResultado = "";
+      filtrarEquipo("");
+    }}
+  >
     <label class="field-inline">
       <span class="faint">Equipo</span>
       <select class="input" value={equipoFiltro} onchange={(e) => filtrarEquipo(e.currentTarget.value)}>
         <option value="">Todos</option>
         {#each actual.equipos.filter((e) => e.confirmado !== false) as e (e.id)}<option value={e.id}>{e.nombre}</option>{/each}
-      </select>
-    </label>
-    <label class="field-inline">
-      <span class="faint">Periodo</span>
-      <select class="input" bind:value={periodo}>
-        <option value="30">Últimos 30 días</option>
-        <option value="90">Últimos 90 días</option>
-        <option value="365">Último año</option>
-        <option value="todo">Todo</option>
       </select>
     </label>
     <label class="field-inline">
@@ -185,7 +212,7 @@
         <option value="fallo">{esPrueba ? "Fallidas o con avisos" : "Fallidas"}</option>
       </select>
     </label>
-  </div>
+  </BarraTabla>
 
   {#if error && datos}<div class="notice notice-danger" role="alert"><TriangleAlert size={16} /><p>{error}</p></div>{/if}
 
@@ -202,7 +229,7 @@
   {:else}
     <!-- 15aa: las cifras de lo que se ve (las pruebas nunca se mezclan con las reales). -->
     <div class="cifras" role="list" aria-label="Cifras de {NOMBRES_CLASE[clase].toLowerCase()}">
-      <Cifra icono={iconoClase[clase]} etiqueta={esPrueba ? "Pruebas" : "Restauraciones"} valor={numero(cifras.total)} sub={cifras.fallidas ? plural(cifras.fallidas, "fallida", "fallidas") : cifras.total ? "todas correctas" : "ninguna en el periodo"} mal={cifras.fallidas > 0} />
+      <Cifra icono={iconoClase[clase]} etiqueta={esPrueba ? "Pruebas" : "Restauraciones"} valor={numero(cifras.total)} sub={cifras.fallidas ? plural(cifras.fallidas, "fallida", "fallidas") : cifras.total ? "todas correctas" : "ninguna con estos filtros"} mal={cifras.fallidas > 0} />
       <Cifra icono={Clock} etiqueta={esPrueba ? "Tiempo medio de una prueba" : "Tiempo medio (RTO real)"} valor={textoTardo(cifras.medio_s)} sub={cifras.maximo_s != null ? `la más larga, ${textoTardo(cifras.maximo_s)}` : "sin correctas"} />
       <Cifra icono={CircleCheck} etiqueta="Éxito" valor={cifras.exito == null ? "—" : `${cifras.exito} %`} sub={`${bytes(cifras.bytes)} ${esPrueba ? "probados" : "restaurados"}`} />
       {#if esPrueba}
@@ -227,7 +254,7 @@
         </p>
       {/if}
       <ul class="lista-rest">
-        {#each lista as r (`${r.equipo}|${r.id}`)}
+        {#each enPantalla as r (`${r.equipo}|${r.id}`)}
           {@const Ic = iconoClase[claseRestauracion(r)]}
           <li>
             <button class="fila elegible-fila" onclick={() => abrir(r)}>
@@ -254,6 +281,7 @@
         {/each}
       </ul>
     </section>
+    <VerMas vistas={enPantalla.length} total={lista.length} onclick={() => (limite += TANDA)} alVolver={() => (limite = TANDA)} />
 
   {/if}
   {#if datos && puede.ordenar(actual.cliente?.rol)}
@@ -276,7 +304,7 @@
       <!-- 15aa: la ficha de una prueba: qué, desde dónde, dónde, cómo se comprobó, cuánto y quién. -->
       <dl class="ficha">
         <dt>Resultado</dt>
-        <dd><Chip pequeno tono={r.resultado === "ok" ? "ok" : r.resultado === "aviso" ? "warn" : "bad"} texto={r.resultado === "ok" ? "Correcta" : r.resultado === "aviso" ? "Con avisos" : "Falló"} />{#if r.mensaje} <span class="faint">{r.mensaje}</span>{/if}</dd>
+        <dd><Chip pequeno tono={r.resultado === "ok" ? "ok" : r.resultado === "aviso" ? "warn" : "bad"} texto={r.resultado === "ok" ? "Correcta" : r.resultado === "aviso" ? "Con avisos" : "Falló"} />{#if r.mensaje} <span class="faint">{#if r.resultado === "ok"}{r.mensaje}{:else}<ErrorCopia mensaje={r.mensaje} />{/if}</span>{/if}</dd>
         <dt>Quién la lanzó</dt>
         <dd>{textoQuien(r)}</dd>
         <dt>Cuándo</dt>
@@ -301,7 +329,7 @@
     {:else}
     <dl class="ficha">
       <dt>Resultado</dt>
-      <dd><Chip pequeno tono={r.resultado === "ok" ? "ok" : "bad"} texto={r.resultado === "ok" ? "Correcta" : "Falló"} />{#if r.mensaje} <span class="faint">{r.mensaje}</span>{/if}</dd>
+      <dd><Chip pequeno tono={r.resultado === "ok" ? "ok" : "bad"} texto={r.resultado === "ok" ? "Correcta" : "Falló"} />{#if r.mensaje} <span class="faint">{#if r.resultado === "ok"}{r.mensaje}{:else}<ErrorCopia mensaje={r.mensaje} />{/if}</span>{/if}</dd>
       <dt>Quién</dt>
       <dd>{textoQuien(r)}</dd>
       <dt>Cuándo</dt>
@@ -352,11 +380,6 @@
 {/if}
 
 <style>
-  .filtros {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--sp-3);
-  }
   .field-inline {
     display: inline-flex;
     align-items: center;

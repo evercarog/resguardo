@@ -198,6 +198,8 @@ export interface Totales {
   /** Equipos por tono (para la barra). */
   porTono: Record<Tono, number>;
   protegido: number;
+  /** 16w: lo que ocupa en disco con todo su historial (null si ningún equipo lo midió). */
+  enDisco: number | null;
   repos: number;
   versiones24: number;
   fallos24: number;
@@ -207,6 +209,7 @@ export interface Totales {
 export function totales(clientes: PanelCliente[], ahora = Date.now()): Totales {
   const porTono: Record<Tono, number> = { ok: 0, warn: 0, bad: 0, info: 0, paused: 0, neutral: 0 };
   let protegido = 0;
+  let enDisco: number | null = null;
   let repos = 0;
   let versiones24 = 0;
   let fallos24 = 0;
@@ -219,6 +222,9 @@ export function totales(clientes: PanelCliente[], ahora = Date.now()): Totales {
       for (const r of e.resumen?.repositorios ?? []) {
         repos++;
         protegido += bytesRepo(r, informeDe(inf[e.id], r.id)) ?? 0;
+        // 16w: lo que ocupa de verdad en disco, si el equipo lo mide.
+        const disco = informeDe(inf[e.id], r.id)?.espacio?.en_disco_bytes;
+        if (disco != null) enDisco = (enDisco ?? 0) + disco;
       }
     const u = ultimas24h(es, inf, ahora);
     versiones24 += u.versiones;
@@ -227,7 +233,7 @@ export function totales(clientes: PanelCliente[], ahora = Date.now()): Totales {
     if (p && (!proxima || p.cuando < proxima.cuando)) proxima = { ...p, cliente: c };
   }
   const equipos = Object.values(porTono).reduce((a, b) => a + b, 0);
-  return { equipos, alDia: porTono.ok, porTono, protegido, repos, versiones24, fallos24, proxima };
+  return { equipos, alDia: porTono.ok, porTono, protegido, enDisco, repos, versiones24, fallos24, proxima };
 }
 
 // ---------------------------------------------------------------------------

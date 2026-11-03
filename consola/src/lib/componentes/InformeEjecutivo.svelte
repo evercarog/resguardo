@@ -8,7 +8,7 @@
   import { untrack } from "svelte";
   import { CalendarClock, Check, Download, FileText, Info, Send } from "@lucide/svelte";
   import * as api from "$lib/api";
-  import { actual, puede } from "$lib/estado.svelte";
+  import { actual, app, puede } from "$lib/estado.svelte";
   import { avisar, fallo } from "$lib/avisos.svelte";
   import { guardar as guardarArchivo } from "$lib/descarga";
   import { fechaLarga, relativo } from "$lib/formato";
@@ -188,7 +188,7 @@
     {#if !info.correo}
       <div class="notice notice-info">
         <Info size={16} />
-        <p>No hay un canal de correo encendido: lo pone el propietario del servidor (Servidor → Notificaciones) o el de este cliente (Personas y ajustes).</p>
+        <p>No hay un canal de correo encendido, así que aunque lo programes no se manda nada. Lo pone quien administra el servidor (<a class="link" href="/c/{actual.id}/ajustes/servidor#notificaciones">Servidor → Notificaciones</a>) o quien es propietario de este cliente (<a class="link" href="/c/{actual.id}/ajustes/personas#sec-notificaciones">Personas y ajustes</a>).</p>
       </div>
     {/if}
     <form class="programa" onsubmit={guardar}>
@@ -218,6 +218,8 @@
           <option value="cliente">El de {actual.cliente?.nombre ?? "este cliente"}{info.logo_cliente ? "" : " (aún no hay)"}</option>
           <option value="ninguno">Ninguno</option>
         </select>
+        <!-- 16p: dónde se pone cada logo, junto a donde se elige. -->
+        {#if logo === "prestador" && !info.prestador.logo}<span class="field-hint">{#if app.cuenta?.superusuario}Se pone en <a class="link" href="/c/{actual.id}/ajustes/servidor">Ajustes → Servidor → Prestador de los informes</a>.{:else}Lo pone quien administra el servidor.{/if}</span>{/if}
       </div>
       <div class="field ancho">
         <label class="field-label" for="ie-para">Destinatarios</label>

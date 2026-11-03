@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ErrorCopia from "$lib/componentes/ErrorCopia.svelte";
+  import { fraseError } from "$lib/errorCopia";
   // «Lo que se quitó»: cada vuelta de la retención (del equipo, del almacén
   // o de la copia externa) con quién la aplicó, la regla, las cifras y, al
   // abrirla, las versiones que quitó y por qué no las guardó la regla.
@@ -70,7 +72,7 @@
           {#if v.quitadas !== null}
             <strong>{v.quitadas === 0 ? "No sobraba ninguna versión" : `${plural(v.quitadas, "versión quitada", "versiones quitadas")}`}</strong>
           {:else if !v.ok}
-            <strong>Falló{v.mensaje ? `: ${v.mensaje}` : ""}</strong>
+            <strong>Falló{v.mensaje ? `: ${fraseError(v.mensaje) || v.mensaje}` : ""}</strong>
           {:else}
             <strong>No se sabe qué quitó</strong>
           {/if}
@@ -81,7 +83,7 @@
         {#if abierta}
           <div class="detalle" id="{id}-{v.id}">
             <p class="faint">{quienAplico(v, nombres)}{v.regla ? ` ${resumenRegla(v.regla)}` : ""}</p>
-            {#if v.mensaje}<p class="msg" class:mal={!v.ok}>{v.mensaje}</p>{/if}
+            {#if v.mensaje}{#if v.ok}<p class="msg">{v.mensaje}</p>{:else}<div class="msg mal"><ErrorCopia mensaje={v.mensaje} /></div>{/if}{/if}
             {#if v.sospechosas}
               <p class="faint">El almacén no tocó {v.sospechosas === 1 ? "una versión cuya hora" : `${v.sospechosas} versiones cuya hora`} no cuadra con su subida (traídas de otro repositorio, o el reloj del equipo): ni se quitan ni desplazan a otras.</p>
             {/if}

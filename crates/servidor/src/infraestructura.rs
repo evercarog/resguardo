@@ -59,6 +59,9 @@ pub struct Disco {
     /// `ssd`, `hdd`, `nvme` u `otro`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tipo: Option<String>,
+    /// 0.8.3 (16a): la marca (fabricante).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub marca: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modelo: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -112,6 +115,12 @@ pub struct Servidor {
     pub marca: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modelo: Option<String>,
+    /// 0.8.3 (16f): número de serie («Service Tag»…), escrito a mano.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub serie: Option<String>,
+    /// 0.8.3 (16f): etiqueta de inventario del cliente.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inventario: Option<String>,
     /// El id de una sede del cliente (docs/sedes.md).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sede: Option<String>,
@@ -356,6 +365,8 @@ pub fn limpiar(mut d: Infraestructura, previa: Option<&Infraestructura>) -> Resu
         s.nombre = texto(&s.nombre, 80, "El nombre del servidor", false)?.ok_or("Cada servidor necesita un nombre.")?;
         s.marca = opcional(&s.marca, 80, "La marca", false)?;
         s.modelo = opcional(&s.modelo, 120, "El modelo", false)?;
+        s.serie = opcional(&s.serie, 64, "El número de serie", false)?;
+        s.inventario = opcional(&s.inventario, 64, "La etiqueta de inventario", false)?;
         s.notas = opcional(&s.notas, 1000, "Las notas", true)?;
         s.sede = s.sede.take().filter(|x| !x.is_empty());
         if s.sede.as_deref().is_some_and(|x| !dc::id_simple(x)) {
@@ -375,6 +386,7 @@ pub fn limpiar(mut d: Infraestructura, previa: Option<&Infraestructura>) -> Resu
             }
             k.nombre = texto(&k.nombre, 80, "El nombre del disco", false)?.ok_or("Cada disco necesita un nombre.")?;
             de_lista(&mut k.tipo, &TIPOS_DISCO, "Ese tipo de disco no se conoce (elige «Otro»).")?;
+            k.marca = opcional(&k.marca, 80, "La marca del disco", false)?;
             k.modelo = opcional(&k.modelo, 120, "El modelo del disco", false)?;
             k.serie = opcional(&k.serie, 64, "El número de serie", false)?;
             k.tamano = k.tamano.filter(|b| *b > 0);
@@ -627,6 +639,23 @@ mod pruebas {
         assert!(con(&|v| v["equipos"]["e-vm"]["volumenes"][0]["disco"] = json!("b9")).is_err(), "disco que no es de su servidor");
         assert!(con(&|v| v["destinos"] = json!({ "../x": { "servidor": "hv-01" } })).is_err());
         assert!(con(&|v| v["servidores"][0]["modelo"] = json!("m".repeat(121))).is_err());
+        // 0.8.3 (16a, 16f): marca del disco, serie e inventario del servidor, cortos.
+        assert!(con(&|v| v["servidores"][0]["serie"] = json!("s".repeat(65))).is_err());
+        assert!(con(&|v| v["servidores"][0]["inventario"] = json!("i".repeat(65))).is_err());
+        assert!(con(&|v| v["servidores"][0]["discos"][0]["marca"] = json!("m".repeat(81))).is_err());
+        let f = con(&|v| {
+            v["servidores"][0]["serie"] = json!(" ABC1234 ");
+            v["servidores"][0]["inventario"] = json!("INV-0042");
+            v["servidores"][0]["discos"][0]["marca"] = json!("Marca D");
+        })
+        .unwrap();
+        assert_eq!(f.servidores[0].serie.as_deref(), Some("ABC1234"));
+        assert_eq!(f.servidores[0].inventario.as_deref(), Some("INV-0042"));
+        assert_eq!(f.servidores[0].discos[0].marca.as_deref(), Some("Marca D"));
+        // Y pasan igual a los datos comunes (los valida el protocolo).
+        let comunes = datos(&f);
+        let s = comunes.get("infra:servidor:hv-01").expect("el servidor");
+        assert_eq!(dc::valor_valido("infra:servidor:hv-01", s).unwrap()["serie"], "ABC1234");
         // Un hipervisor vacío es «sin hipervisor».
         assert_eq!(con(&|v| v["servidores"][0]["hipervisor"] = json!("")).unwrap().servidores[0].hipervisor, None);
         // Un disco dicho: vale.

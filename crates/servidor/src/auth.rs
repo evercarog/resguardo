@@ -1,7 +1,7 @@
 //! Cuentas: contraseñas (Argon2id), TOTP (RFC 6238), sesiones con cookie y
 //! la comprobación de que una cuenta es miembro de un cliente.
 
-use crate::almacen::{ahora, ClienteCtx, Cuenta, Rol};
+use crate::almacen::{ahora, Almacen, ClienteCtx, Cuenta, NuevaSesion, Rol, Sesion, Ts};
 use crate::error::{ErrorApi, Res};
 use crate::estado::St;
 use argon2::password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
@@ -23,9 +23,195 @@ pub fn nombre_cookie(identidad_pub: &str, https: bool) -> String {
     let id: String = identidad_pub.chars().filter(char::is_ascii_alphanumeric).take(6).collect();
     format!("{}{COOKIE}_{id}", if https { "__Host-" } else { "" })
 }
-/// Duración de una sesión completa (se renueva con el uso) y de una a medias (falta el TOTP).
-pub const SESION_HORAS: i64 = 12;
+/// Duración de una sesión a medias (falta el TOTP).
 pub const SESION_PENDIENTE_MIN: i64 = 10;
+
+// ---------- Plazos de las sesiones (16k) ----------
+
+/// Una sesión recién abierta no manda sobre las demás durante este tiempo: no
+/// puede cerrar otras sesiones ni cambiar la contraseña, el segundo paso ni las
+/// llaves de acceso (como Telegram). Las sesiones antiguas sí pueden cerrarla.
+pub const SESION_NUEVA_S: i64 = 24 * 3600;
+/// Cada cuánto, como mucho, se anota el uso de una sesión (no una escritura por petición).
+pub const TOCAR_CADA_S: i64 = 60;
+/// Clave del ajuste del servidor con los plazos.
+pub const CLAVE_PLAZOS: &str = "sesiones_plazos";
+
+/// Plazos de las sesiones, que ajusta el propietario del servidor (con topes).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Plazos {
+    /// Sin usarla este tiempo, caduca (sin «Recordar»).
+    pub inactividad_horas: i64,
+    /// Máximo absoluto sin «Recordar», aunque se use.
+    pub maximo_horas: i64,
+    /// Máximo absoluto con «Recordar este dispositivo» (0: no se ofrece).
+    pub recordar_dias: i64,
+}
+
+impl Default for Plazos {
+    fn default() -> Self {
+        Plazos { inactividad_horas: 8, maximo_horas: 24, recordar_dias: 14 }
+    }
+}
+
+impl Plazos {
+    /// Dentro de los topes: inactividad 1–24 h; máximo entre la inactividad y 7 días;
+    /// recordar 0–30 días.
+    pub fn con_topes(self) -> Self {
+        let inactividad_horas = self.inactividad_horas.clamp(1, 24);
+        Plazos { inactividad_horas, maximo_horas: self.maximo_horas.clamp(inactividad_horas, 7 * 24), recordar_dias: self.recordar_dias.clamp(0, 30) }
+    }
+
+    pub fn de_texto(v: Option<&str>) -> Self {
+        v.and_then(|v| serde_json::from_str::<Plazos>(v).ok()).unwrap_or_default().con_topes()
+    }
+
+    /// Máximo absoluto de una sesión nueva.
+    pub fn maximo(&self, recordar: bool, creada: Ts) -> Ts {
+        if recordar && self.recordar_dias > 0 {
+            creada + self.recordar_dias * 86_400
+        } else {
+            creada + self.maximo_horas * 3600
+        }
+    }
+
+    /// Hasta cuándo vale sin usarla, desde `ahora` (con «Recordar», hasta 7 días sin
+    /// usarla); nunca más allá del máximo.
+    pub fn expira(&self, recordar: bool, ahora: Ts, maximo: Ts) -> Ts {
+        let inactividad = if recordar && self.recordar_dias > 0 { self.recordar_dias.min(7) * 86_400 } else { self.inactividad_horas * 3600 };
+        (ahora + inactividad).min(maximo)
+    }
+}
+
+pub fn plazos(db: &dyn Almacen) -> Plazos {
+    Plazos::de_texto(db.valor(CLAVE_PLAZOS).ok().flatten().as_deref())
+}
+
+/// Una sesión que aún no lleva 24 h abierta (salvo en una cuenta que tampoco las
+/// lleva: no hay sesiones antiguas que proteger). Devuelve hasta cuándo es «nueva».
+pub fn sesion_nueva_hasta(sesion_creada: Ts, cuenta_creada: Option<Ts>, ahora: Ts) -> Option<Ts> {
+    let hasta = sesion_creada + SESION_NUEVA_S;
+    let cuenta_nueva = cuenta_creada.is_some_and(|c| ahora - c < SESION_NUEVA_S);
+    (hasta > ahora && !cuenta_nueva).then_some(hasta)
+}
+
+/// Navegador y sistema en pocas palabras, del `User-Agent` («Chrome · Android»).
+/// Solo esto se guarda: nunca el texto entero.
+pub fn resumen_agente(ua: &str) -> String {
+    let ua: String = ua.chars().take(512).collect();
+    let tiene = |x: &str| ua.contains(x);
+    let navegador = if tiene("Edg/") || tiene("EdgA/") || tiene("EdgiOS/") {
+        "Edge"
+    } else if tiene("OPR/") || tiene("Opera") {
+        "Opera"
+    } else if tiene("SamsungBrowser/") {
+        "Samsung Internet"
+    } else if tiene("Firefox/") || tiene("FxiOS/") {
+        "Firefox"
+    } else if tiene("Chrome/") || tiene("CriOS/") || tiene("Chromium/") {
+        "Chrome"
+    } else if tiene("Safari/") {
+        "Safari"
+    } else {
+        ""
+    };
+    let sistema = if tiene("Android") {
+        "Android"
+    } else if tiene("iPhone") || tiene("iPod") {
+        "iPhone"
+    } else if tiene("iPad") {
+        "iPad"
+    } else if tiene("Windows") {
+        "Windows"
+    } else if tiene("CrOS") {
+        "ChromeOS"
+    } else if tiene("Mac OS X") || tiene("Macintosh") {
+        "macOS"
+    } else if tiene("Linux") {
+        "Linux"
+    } else {
+        ""
+    };
+    match (navegador, sistema) {
+        ("", "") => "Navegador desconocido".into(),
+        (n, "") => n.into(),
+        ("", s) => format!("Navegador · {s}"),
+        (n, s) => format!("{n} · {s}"),
+    }
+}
+
+/// De dónde viene una sesión (para la lista de sesiones).
+#[derive(Clone, Debug, Default)]
+pub struct Origen {
+    pub agente: String,
+    pub ip: String,
+}
+
+impl Origen {
+    pub fn de(headers: &axum::http::HeaderMap, ip: &str) -> Self {
+        let ua = headers.get(axum::http::header::USER_AGENT).and_then(|v| v.to_str().ok()).unwrap_or("");
+        Origen { agente: resumen_agente(ua), ip: ip.chars().take(64).collect() }
+    }
+}
+
+/// Lo que se guarda de una sesión a medias (tras la contraseña): el «Recordar» y
+/// el origen pasan a la completa.
+pub fn nueva_pendiente(token_hash: &str, cuenta: &str, recordar: bool, origen: &Origen) -> NuevaSesion {
+    let t = ahora();
+    let fin = t + SESION_PENDIENTE_MIN * 60;
+    NuevaSesion {
+        token_hash: token_hash.into(),
+        cuenta: cuenta.into(),
+        aal: 1,
+        expira: fin,
+        maximo: fin,
+        creada: t,
+        recordar,
+        agente: origen.agente.clone(),
+        ip: origen.ip.clone(),
+    }
+}
+
+/// La sesión completa que sale de una a medias (al dar el segundo paso): empieza ahora.
+pub fn nueva_completa(db: &dyn Almacen, token_hash: &str, pendiente: &Sesion) -> NuevaSesion {
+    let p = plazos(db);
+    let t = ahora();
+    let maximo = p.maximo(pendiente.recordar, t);
+    NuevaSesion {
+        token_hash: token_hash.into(),
+        cuenta: pendiente.cuenta_id.clone(),
+        aal: 2,
+        expira: p.expira(pendiente.recordar, t, maximo),
+        maximo,
+        creada: t,
+        recordar: pendiente.recordar,
+        agente: pendiente.agente.clone(),
+        ip: pendiente.ip.clone(),
+    }
+}
+
+/// La misma sesión con otra ficha (al cambiar la contraseña o el autenticador):
+/// conserva cuándo se entró, el «Recordar» y su máximo (no se alarga).
+pub fn misma_con_otra_ficha(db: &dyn Almacen, token_hash: &str, s: &Sesion) -> NuevaSesion {
+    let p = plazos(db);
+    NuevaSesion {
+        token_hash: token_hash.into(),
+        cuenta: s.cuenta_id.clone(),
+        aal: 2,
+        expira: p.expira(s.recordar, ahora(), s.maximo),
+        maximo: s.maximo,
+        creada: s.creada,
+        recordar: s.recordar,
+        agente: s.agente.clone(),
+        ip: s.ip.clone(),
+    }
+}
+
+/// Segundos que le quedan a la cookie: hasta el máximo de la sesión. Sin
+/// «Recordar», `None`: una cookie de sesión, que se va al cerrar el navegador.
+pub fn max_edad(n: &NuevaSesion) -> Option<i64> {
+    n.recordar.then(|| (n.maximo - ahora()).max(60))
+}
 /// Peticiones de una cuenta (con sesión completa) por minuto.
 pub const MAX_PETICIONES_CUENTA_MIN: u32 = 1_200;
 
@@ -164,18 +350,20 @@ pub fn codigos_recuperacion() -> (Vec<String>, Vec<String>) {
 
 // ---------- Cookies ----------
 
-/// La cookie dura lo que una sesión completa: la base de datos decide cuánto
-/// vale de verdad (10 min a medias, sin el TOTP; 12 h desde el último uso).
-pub fn cookie_sesion(st: &St, ficha: &str, max_edad_s: i64) -> String {
+/// La cookie dura hasta el máximo de la sesión (sin `Max-Age`, hasta cerrar el
+/// navegador): la base de datos decide cuánto vale de verdad (10 min a medias,
+/// sin el TOTP; caduca antes si no se usa).
+pub fn cookie_sesion(st: &St, ficha: &str, max_edad_s: Option<i64>) -> String {
     format!(
-        "{}={ficha}; Path=/; HttpOnly; SameSite=Strict; Max-Age={max_edad_s}{}",
+        "{}={ficha}; Path=/; HttpOnly; SameSite=Strict{}{}",
         nombre_cookie(&st.identidad_pub, st.opciones.https),
+        max_edad_s.map(|s| format!("; Max-Age={s}")).unwrap_or_default(),
         if st.opciones.https { "; Secure" } else { "" }
     )
 }
 
 pub fn cookie_borrar(st: &St) -> String {
-    cookie_sesion(st, "", 0)
+    cookie_sesion(st, "", Some(0))
 }
 
 /// Una sesión completa nueva para la cuenta (al terminar de entrar o al cambiar
@@ -204,6 +392,7 @@ pub struct SesionActual {
     pub cuenta: Cuenta,
     pub token_hash: String,
     pub aal: u8,
+    pub sesion: Sesion,
 }
 
 async fn sesion_de(parts: &Parts, st: &St) -> Res<SesionActual> {
@@ -218,7 +407,7 @@ pub async fn sesion_de_cabeceras(headers: &axum::http::HeaderMap, st: &St) -> Re
     let sesion = st.db(move |db| db.sesion(&th)).await?.ok_or_else(ErrorApi::sin_sesion)?;
     let cid = sesion.cuenta_id.clone();
     let cuenta = st.db(move |db| db.cuenta(&cid)).await?.ok_or_else(ErrorApi::sin_sesion)?;
-    Ok(SesionActual { cuenta, token_hash, aal: sesion.aal })
+    Ok(SesionActual { cuenta, token_hash, aal: sesion.aal, sesion })
 }
 
 /// Una sesión a medias (tras la contraseña, antes del TOTP).
@@ -251,9 +440,18 @@ impl FromRequestParts<St> for Usuario {
                 espera,
             ));
         }
-        // Se renueva con el uso.
-        let th = s.token_hash.clone();
-        let _ = st.db(move |db| db.elevar_sesion(&th, ahora() + SESION_HORAS * 3600)).await;
+        // Se renueva con el uso (16k), nunca más allá de su máximo; el uso se anota
+        // como mucho una vez por minuto.
+        let t = ahora();
+        if t - s.sesion.usada >= TOCAR_CADA_S {
+            let (th, recordar, maximo) = (s.token_hash.clone(), s.sesion.recordar, s.sesion.maximo);
+            let _ = st
+                .db(move |db| {
+                    let expira = plazos(db).expira(recordar, t, maximo);
+                    db.tocar_sesion(&th, expira, t)
+                })
+                .await;
+        }
         Ok(Usuario(s))
     }
 }
@@ -264,6 +462,28 @@ impl Usuario {
     }
     pub fn nombre(&self) -> &str {
         &self.0.cuenta.nombre
+    }
+
+    /// Lo delicado de la cuenta (cerrar otras sesiones, cambiar la contraseña, el segundo
+    /// paso o las llaves de acceso) no se puede desde una sesión de menos de 24 h (16k).
+    pub async fn sesion_asentada(&self, st: &St) -> Res<()> {
+        let id = self.id().to_string();
+        let creada_cuenta = st.db(move |db| db.cuenta_creada(&id)).await?;
+        match sesion_nueva_hasta(self.0.sesion.creada, creada_cuenta, ahora()) {
+            None => Ok(()),
+            Some(hasta) => {
+                let horas = (hasta - ahora() + 3599) / 3600;
+                Err(ErrorApi::nuevo(
+                    axum::http::StatusCode::FORBIDDEN,
+                    "sesion_nueva",
+                    format!(
+                        "Esta sesión es nueva: por seguridad, durante sus primeras 24 horas no puede cerrar otras sesiones, cambiar la contraseña, el segundo paso o las llaves de acceso, restablecer el segundo paso de otros ni cambiar los plazos de las sesiones. Podrás en unas {} h, o ahora desde un dispositivo donde ya tenías la sesión abierta.",
+                        horas.max(1)
+                    ),
+                )
+                .con(serde_json::json!({ "desde": crate::api::fecha(hasta) })))
+            }
+        }
     }
 
     /// La cuenta es miembro del cliente con al menos `minimo`: el contexto para llegar a sus datos.
@@ -297,6 +517,61 @@ mod tests {
     fn cookie_con_prefijo_host_solo_con_https() {
         assert_eq!(nombre_cookie("ab+12/cdEF", false), "resguardo_sesion_ab12cd");
         assert_eq!(nombre_cookie("ab+12/cdEF", true), "__Host-resguardo_sesion_ab12cd");
+    }
+
+    #[test]
+    fn plazos_de_las_sesiones() {
+        let p = Plazos::default();
+        let t = 1_000_000;
+        // Sin recordar: 8 h sin usarla, 24 h como mucho.
+        let max = p.maximo(false, t);
+        assert_eq!(max, t + 24 * 3600);
+        assert_eq!(p.expira(false, t, max), t + 8 * 3600);
+        // El uso no la alarga más allá del máximo.
+        assert_eq!(p.expira(false, t + 20 * 3600, max), max);
+        // Con recordar: 14 días como mucho, 7 sin usarla.
+        let max = p.maximo(true, t);
+        assert_eq!(max, t + 14 * 86_400);
+        assert_eq!(p.expira(true, t, max), t + 7 * 86_400);
+        assert_eq!(p.expira(true, t + 13 * 86_400, max), max);
+        // Con «recordar» apagado por el propietario, como sin recordar.
+        let p0 = Plazos { recordar_dias: 0, ..p };
+        assert_eq!(p0.maximo(true, t), t + 24 * 3600);
+        // Topes: nada de sesiones eternas ni de cero horas.
+        let raro = Plazos { inactividad_horas: 0, maximo_horas: 10_000, recordar_dias: 365 }.con_topes();
+        assert_eq!(raro, Plazos { inactividad_horas: 1, maximo_horas: 168, recordar_dias: 30 });
+        let corto = Plazos { inactividad_horas: 12, maximo_horas: 2, recordar_dias: 1 }.con_topes();
+        assert_eq!(corto.maximo_horas, 12, "el máximo nunca es menor que la inactividad");
+        assert_eq!(Plazos::de_texto(Some("no es json")), Plazos::default());
+        assert_eq!(Plazos::de_texto(None), Plazos::default());
+    }
+
+    #[test]
+    fn sesion_nueva_durante_24_horas() {
+        let t = 10_000_000;
+        // Sesión de hace 1 h en una cuenta vieja: nueva hasta las 24 h.
+        assert_eq!(sesion_nueva_hasta(t - 3600, Some(t - 90 * 86_400), t), Some(t - 3600 + SESION_NUEVA_S));
+        // Pasadas las 24 h, ya manda.
+        assert_eq!(sesion_nueva_hasta(t - SESION_NUEVA_S, Some(t - 90 * 86_400), t), None);
+        // Una cuenta recién creada no tiene sesiones antiguas que proteger.
+        assert_eq!(sesion_nueva_hasta(t - 60, Some(t - 3600), t), None);
+        assert!(sesion_nueva_hasta(t - 60, None, t).is_some());
+    }
+
+    #[test]
+    fn resumen_del_navegador() {
+        let android = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36";
+        assert_eq!(resumen_agente(android), "Chrome · Android");
+        let win_edge = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0";
+        assert_eq!(resumen_agente(win_edge), "Edge · Windows");
+        let iphone = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1";
+        assert_eq!(resumen_agente(iphone), "Safari · iPhone");
+        let firefox = "Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0";
+        assert_eq!(resumen_agente(firefox), "Firefox · Linux");
+        assert_eq!(resumen_agente(""), "Navegador desconocido");
+        assert_eq!(resumen_agente("curl/8.0"), "Navegador desconocido");
+        // Nada del texto original pasa tal cual.
+        assert_eq!(resumen_agente("<script>alert(1)</script> Windows"), "Navegador · Windows");
     }
 
     #[test]

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { primerPaso } from "$lib/urgentes";
   import { preguntarAlSalir } from "$lib/salir.svelte";
   import MarcasVersion from "$lib/componentes/MarcasVersion.svelte";
   import Ilustracion from "$ui/componentes/Ilustracion.svelte";
@@ -747,7 +748,7 @@
         {:else}
           <div class="card">
             <Vacio icono={History} ilustracion="sin-versiones" titulo="Nada que restaurar todavía" texto="Cuando un equipo tenga su primera copia, podrás recuperar sus archivos desde aquí.">
-              <a class="btn btn-primary" href="/c/{actual.id}/equipos">Ver los equipos</a>
+              {#if primerPaso(actual.id, actual.equipos, puede.administrar(actual.cliente?.rol))}{@const pp = primerPaso(actual.id, actual.equipos, puede.administrar(actual.cliente?.rol))!}<a class="btn btn-primary" href={pp.href}>{pp.texto}</a>{/if}
             </Vacio>
           </div>
         {/if}
@@ -1033,7 +1034,7 @@
           </CampoClave>
         {/if}
         <fieldset class="motivo">
-          <legend>¿Por qué restauras? <span class="faint">{motivoObligatorio ? "(obligatorio: un toque basta)" : "(opcional)"}</span></legend>
+          <legend>¿Por qué restauras? <span class="faint">{motivoObligatorio ? "(obligatorio: un toque basta)" : "(opcional)"}{#if puede.administrar(actual.cliente?.rol)} · <a class="link" href="/c/{actual.id}/recuperar/restauraciones#t-ajustes-rest">cambiarlo</a>{/if}</span></legend>
           <div class="chips-motivo" role="radiogroup" aria-label="Motivo">
             {#each MOTIVOS as m (m.id)}
               <label class="chip-motivo" class:on={motivo === m.id}><input type="radio" name="motivo" value={m.id} bind:group={motivo} />{m.texto}</label>
@@ -1556,7 +1557,7 @@
   }
   .pie-paso {
     position: sticky;
-    bottom: 0;
+    bottom: var(--barra-movil, 0px);
     display: flex;
     align-items: center;
     justify-content: space-between;

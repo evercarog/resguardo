@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { sinPrefijo } from "$lib/espejoTrabajos";
   import { velocidadEnFrase } from "$lib/franjas";
   import { NOMBRE_TIPO_DESTINO } from "$lib/direccion";
   import { copiar as alPortapapeles } from "$lib/portapapeles";
@@ -10,7 +11,7 @@
   import { bytesRepo, destinoDe, dias, diasCopia, informeDe, nVersiones, proteccion, textoResultado, tonoResultado, ultimaEjecucion, ultimaVersion } from "$lib/repo";
   import AnilloProteccion from "$lib/componentes/repo/AnilloProteccion.svelte";
   import DiasCuadros from "$lib/componentes/repo/DiasCuadros.svelte";
-  import { ultimas24h } from "$lib/panel";
+  import { espacioTotal, fraseEnDisco, ultimas24h } from "$lib/panel";
   import HistorialVersiones from "$lib/componentes/repo/HistorialVersiones.svelte";
   import PanelDetalle from "$lib/componentes/detalle/PanelDetalle.svelte";
   import { abrirVersion, abrirVuelta, elegirDia, elegirFechas } from "$lib/componentes/detalle/navegar";
@@ -62,6 +63,8 @@
   import { avisar, fallo } from "$lib/avisos.svelte";
   import { bytes, cuandoFrase, fechaLarga, horarioEnFrase, numero, plural, relativo } from "$lib/formato";
   import { enPausa, nombreOrden, proximaCopia, resultadoConError, saludEquipo, type Tono } from "$lib/salud";
+  import { pistaAntivirus } from "$lib/antivirus";
+  import { aLas } from "$lib/interrumpidas";
   import { huellaCorta } from "$lib/servidores";
   import { hostDe } from "$lib/conexion";
   import { claveEspejo } from "$lib/cripto/ordenes";
@@ -85,7 +88,7 @@
   import ElegirSede from "$lib/componentes/ElegirSede.svelte";
   import { sedePorDefecto } from "$lib/sedes";
   import { ponerSedeEquipos } from "$lib/organizacion.svelte";
-  import { filtroEtiqueta, plantillasPropuestas } from "$lib/etiquetas.svelte";
+  import { plantillasPropuestas } from "$lib/etiquetas.svelte";
   import PendienteItem from "$lib/componentes/PendienteItem.svelte";
   import { pendientesDe, terminada } from "$lib/pendientes.svelte";
   import Chip from "$lib/componentes/Chip.svelte";
@@ -254,6 +257,8 @@
   });
 
   const salud = $derived(equipo ? saludEquipo(equipo, reloj.ahora) : null);
+  // 16z: dejó de responder justo después de una copia correcta: ¿el antivirus?
+  const pistaAv = $derived(equipo ? pistaAntivirus(equipo, reloj.ahora) : null);
   const copias = $derived(equipo?.resumen?.copias ?? []);
   const repos = $derived(equipo?.resumen?.repositorios ?? []);
   // C1: lo que va después de cada repositorio (espejos y copias derivadas), con su estado: de la
@@ -320,6 +325,8 @@
   );
   const proximaDeTodas = $derived(pausado ? null : proximaCopia(copias, reloj.ahora));
   const protegidoEquipo = $derived(repos.reduce((n, r) => n + (bytesRepo(r, informeDe(equipo?.ultimo_informe, r.id)) ?? 0), 0));
+  /** 16w: lo que ocupan en disco sus repositorios (todas las versiones, comprimidas y sin duplicados). */
+  const espacioEquipo = $derived(equipo ? espacioTotal([equipo], { [equipo.id]: equipo.ultimo_informe ?? null }) : null);
   // «Historial y versiones» de todas sus copias y repositorios (el mismo de la página de cada uno).
   const historia = usarHistorialEquipo(() => c, () => id);
   const sel = $derived(leerSeleccion(page.url.searchParams));
@@ -987,7 +994,7 @@
         </p>
         {#if equipo.etiquetas?.length || puede.ordenar(rol)}
           <div class="etiquetas-eq">
-            {#each equipo.etiquetas ?? [] as t (t)}<a class="et-enlace" href="/c/{c}/equipos" onclick={() => filtroEtiqueta.poner(t)} use:tip={`Ver los equipos con «${t}»`}><EtiquetaChip nombre={t} /></a>{/each}
+            {#each equipo.etiquetas ?? [] as t (t)}<a class="et-enlace" href="/c/{c}/equipos?et={encodeURIComponent(t)}" use:tip={`Ver los equipos con «${t}»`}><EtiquetaChip nombre={t} /></a>{/each}
             {#if puede.ordenar(rol)}<button class="link mini-et" onclick={() => (editarEtiquetas = true)}><Tag size={12} />{equipo.etiquetas?.length ? "Cambiar etiquetas" : "Añadir etiquetas"}</button>{/if}
           </div>
         {/if}
@@ -1112,6 +1119,9 @@
     {:else if salud.tono !== "ok"}
       <div class="notice {salud.tono === 'bad' ? 'notice-danger' : salud.tono === 'warn' ? 'notice-warn' : 'notice-info'}"><p>{salud.detalle}</p></div>
     {/if}
+    {#if pistaAv}
+      <div class="notice notice-warn"><TriangleAlert size={16} /><p>{equipo.nombre} dejó de responder justo después de una copia correcta (terminó {aLas(pistaAv, reloj.ahora)}). Si nadie lo apagó, puede que el antivirus haya puesto Resguardo Agente en cuarentena. <a href="/ayuda#si-antivirus">Qué mirar</a>.</p></div>
+    {/if}
 
     <nav class="pestanas" aria-label="Secciones del equipo">
       {#each [["resumen", "Resumen"], ["ordenes", "Órdenes"], ["informes", "Informes"], ["detalles", "Detalles"]] as [t, txt] (t)}
@@ -1135,7 +1145,7 @@
           <div class="stat">
             <span class="stat-label">Protegido</span>
             <span class="stat-value">{protegidoEquipo ? bytes(protegidoEquipo) : "—"}</span>
-            <span class="stat-sub">en {plural(repos.length, "repositorio", "repositorios")}</span>
+            <span class="stat-sub" use:tip={espacioEquipo && fraseEnDisco(espacioEquipo) ? `${fraseEnDisco(espacioEquipo)}.${espacioEquipo.leido ? ` Medido ${relativo(espacioEquipo.leido, reloj.ahora)}.` : ""}` : undefined}>{#if espacioEquipo?.enDisco != null}ocupan {bytes(espacioEquipo.enDisco)} en disco con su historial{:else}en {plural(repos.length, "repositorio", "repositorios")}{/if}</span>
           </div>
           <div class="stat">
             <span class="stat-label">Versiones en 24 h</span>
@@ -1434,7 +1444,7 @@
                       <span class="d-texto">
                         <a class="link" href={hrefEspejos(c, equipo.id, undefined, t.id)}><strong>{t.nombre}</strong></a>
                         <span class="faint">{textoCuandoTrabajo(t, (x) => trabajosAlmacen.find((y) => y.id === x)?.nombre ?? x)} · {textoRetencionTrabajo(t)}{#if t.ultima}{" · "}<Tiempo iso={t.ultima} />{/if}</span>
-                        {#if e === "error" && t.resultado}<span class="msg-fallo">{t.resultado} <a href="/ayuda#si-espejo">Qué hacer</a></span>{/if}
+                        {#if e === "error" && t.resultado}<span class="msg-fallo"><ErrorCopia mensaje={sinPrefijo(t.resultado)} /> <a href="/ayuda#si-espejo">Qué hacer</a></span>{/if}
                         {#if t.freno_aviso}<span class="msg-fallo">Freno: {t.freno_aviso}</span>{/if}
                       </span>
                       <Chip pequeno tono={e === "error" ? "bad" : e === "aviso" ? "warn" : e === "ok" ? "ok" : e === "pausado" ? "paused" : "neutral"} texto={e === "error" ? "Falló" : e === "aviso" ? "Por confirmar" : e === "ok" ? "Hecho" : e === "pausado" ? "Pausado" : "Todavía no"} />
@@ -1465,7 +1475,7 @@
                           <span class="faint">{textoRepos(d, nombreRepoAlmacen)}{#if textoVerificacion(d)}{" · "}{textoVerificacion(d)}{/if}</span>
                           <span class="faint">{textoRetencion(d)}{#if d.por_borrar?.archivos}{" · "}{plural(d.por_borrar.archivos, "archivo espera", "archivos esperan")} para borrarse ({bytes(d.por_borrar.bytes)}){#if d.por_borrar.primero}, el primero el {diaLegible(d.por_borrar.primero)}{/if}{/if}</span>
                           {#if d.freno && puede.administrar(rol)}<span class="freno"><button class="btn btn-sm" onclick={() => confirmarFreno(d)}>Confirmar lo que falta…</button></span>{/if}{/if}
-                        {#if resultadoConError(d.resultado)}<span class="msg-fallo">{d.resultado} <a href="/ayuda#{d.tipo === 'nube' && /permis|token|auth|401|403|expir|revoc/i.test(d.resultado ?? '') ? 'si-token' : 'si-espejo'}">Qué hacer</a></span>{/if}
+                        {#if resultadoConError(d.resultado)}<span class="msg-fallo"><ErrorCopia mensaje={sinPrefijo(d.resultado ?? "")} /> <a href="/ayuda#{d.tipo === 'nube' && /permis|token|auth|401|403|expir|revoc/i.test(d.resultado ?? '') ? 'si-token' : 'si-espejo'}">Qué hacer</a></span>{/if}
                       </span>
                       {#if d.resultado}<Chip pequeno tono={resultadoConError(d.resultado) ? "bad" : "ok"} texto={resultadoConError(d.resultado) ? "Falló" : "Hecho"} />{:else}<Chip pequeno tono="neutral" texto="Todavía no" />{/if}
                       {#if puede.administrar(rol)}
@@ -1487,7 +1497,7 @@
                 </div>
               {/if}
               {:else if g.espejo.resultado}
-                <p class="faint pequeno-e">{#if resultadoConError(g.espejo.resultado)}<span class="msg-fallo">{g.espejo.resultado}</span>{:else}{g.espejo.resultado}{/if}</p>
+                <p class="faint pequeno-e">{#if resultadoConError(g.espejo.resultado)}<span class="msg-fallo"><ErrorCopia mensaje={sinPrefijo(g.espejo.resultado ?? "")} /></span>{:else}{g.espejo.resultado}{/if}</p>
               {/if}
             </div>
             {:else}
@@ -1564,7 +1574,7 @@
                   <span class="d-texto">
                     <a class="link" href={hrefEspejos(c, equipo.id, undefined, t.id)}><strong>{t.nombre}</strong></a>
                     <span class="faint">{textoCuandoTrabajo(t, (x) => trabajosPropios.find((y) => y.id === x)?.nombre ?? x)} · {textoRetencionTrabajo(t)}{#if t.ultima}{" · "}<Tiempo iso={t.ultima} />{/if}</span>
-                    {#if e === "error" && t.resultado}<span class="msg-fallo">{t.resultado}</span>{/if}
+                    {#if e === "error" && t.resultado}<span class="msg-fallo"><ErrorCopia mensaje={sinPrefijo(t.resultado)} /></span>{/if}
                   </span>
                   <Chip pequeno tono={e === "error" ? "bad" : e === "aviso" ? "warn" : e === "ok" ? "ok" : e === "pausado" ? "paused" : "neutral"} texto={e === "error" ? "Falló" : e === "aviso" ? "Por confirmar" : e === "ok" ? "Hecho" : e === "pausado" ? "Pausado" : "Todavía no"} />
                 </li>

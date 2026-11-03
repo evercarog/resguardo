@@ -41,8 +41,10 @@ pub fn dropbox_app_key() -> Option<&'static str> {
 }
 
 pub async fn servidor(State(st): State<St>) -> Res<Json<Value>> {
-    let cuentas = st.db(|db| db.contar_cuentas()).await?;
+    let (cuentas, plazos) = st.db(|db| Ok((db.contar_cuentas()?, auth::plazos(db)))).await?;
     let mut v = json!({
+        // 16k: días de «Recordar este dispositivo» (0: no se ofrece) y horas sin usarla.
+        "sesion": { "recordar_dias": plazos.recordar_dias, "inactividad_horas": plazos.inactividad_horas },
         "version": env!("CARGO_PKG_VERSION"),
         "nombre": "Resguardo Server",
         "identidad": st.identidad_pub,
@@ -100,10 +102,11 @@ pub struct Inicio {
     contrasena: String,
 }
 
-pub async fn inicio(State(st): State<St>, ip: Option<Extension<IpCliente>>, Json(p): Json<Inicio>) -> Res<Response> {
+pub async fn inicio(State(st): State<St>, ip: Option<Extension<IpCliente>>, headers: HeaderMap, Json(p): Json<Inicio>) -> Res<Response> {
+    let ip = ip_de(ip);
+    let origen = auth::Origen::de(&headers, &ip);
     // Por IP y en total: el código no se puede probar desde muchas IP a la vez.
-    if !st.limites.intento(&format!("inicio:{}", ip_de(ip)), MAX_INTENTOS, VENTANA) || !st.limites.intento("inicio:*", 50, std::time::Duration::from_secs(3600))
-    {
+    if !st.limites.intento(&format!("inicio:{ip}"), MAX_INTENTOS, VENTANA) || !st.limites.intento("inicio:*", 50, std::time::Duration::from_secs(3600)) {
         return Err(ErrorApi::demasiados());
     }
     let correo = auth::valida_correo(&p.correo)?;
@@ -139,26 +142,27 @@ pub async fn inicio(State(st): State<St>, ip: Option<Extension<IpCliente>>, Json
         })
         .await?;
     let ficha = auth::ficha();
-    let th = auth::hash_ficha(&ficha);
-    let id = cuenta.id.clone();
-    st.db(move |db| db.crear_sesion(&th, &id, 1, ahora() + auth::SESION_PENDIENTE_MIN * 60)).await?;
+    let n = auth::nueva_pendiente(&auth::hash_ficha(&ficha), &cuenta.id, false, &origen);
+    let edad = auth::max_edad(&n);
+    st.db(move |db| db.crear_sesion(&n)).await?;
     // El código de primer arranque ya no sirve: fuera su archivo (el del servicio de Windows).
     let _ = std::fs::remove_file(st.datos.join("codigo-arranque.txt"));
-    Ok(con_cookie(
-        auth::cookie_sesion(&st, &ficha, auth::SESION_HORAS * 3600),
-        json!({ "totp": { "secreto": secreto, "uri": auth::uri_totp(&correo, &secreto) } }),
-    ))
+    Ok(con_cookie(auth::cookie_sesion(&st, &ficha, edad), json!({ "totp": { "secreto": secreto, "uri": auth::uri_totp(&correo, &secreto) } })))
 }
 
 #[derive(Deserialize)]
 pub struct Entrar {
     correo: String,
     contrasena: String,
+    /// 16k: «Recordar este dispositivo» (opcional: las consolas antiguas no lo mandan).
+    #[serde(default)]
+    recordar: bool,
 }
 
 pub async fn entrar(State(st): State<St>, ip: Option<Extension<IpCliente>>, headers: HeaderMap, Json(p): Json<Entrar>) -> Res<Response> {
     let correo = p.correo.trim().to_lowercase();
     let ip = ip_de(ip);
+    let origen = auth::Origen::de(&headers, &ip);
     if !st.limites.intento(&format!("entrar-ip:{ip}"), MAX_INTENTOS * 3, VENTANA) {
         return Err(ErrorApi::demasiados());
     }
@@ -187,10 +191,10 @@ pub async fn entrar(State(st): State<St>, ip: Option<Extension<IpCliente>>, head
         return Err(ErrorApi::nuevo(StatusCode::UNAUTHORIZED, "credenciales", "Correo o contraseña incorrectos.").acceso("entrar"));
     };
     let ficha = auth::ficha();
-    let th = auth::hash_ficha(&ficha);
-    let id = cuenta.id.clone();
-    st.db(move |db| db.crear_sesion(&th, &id, 1, ahora() + auth::SESION_PENDIENTE_MIN * 60)).await?;
-    let cookie = auth::cookie_sesion(&st, &ficha, auth::SESION_HORAS * 3600);
+    let n = auth::nueva_pendiente(&auth::hash_ficha(&ficha), &cuenta.id, p.recordar, &origen);
+    let edad = auth::max_edad(&n);
+    st.db(move |db| db.crear_sesion(&n)).await?;
+    let cookie = auth::cookie_sesion(&st, &ficha, edad);
     // v1.27: el propietario le restableció la verificación en dos pasos: sin
     // el código que le dio, la contraseña sola no da de alta otro autenticador.
     if let Some(r) = restablecimiento(&st, &cuenta.id).await? {
@@ -254,24 +258,28 @@ pub async fn totp(State(st): State<St>, Pendiente(s): Pendiente, Json(p): Json<T
     st.limites.olvidar(&format!("totp:{}", cuenta.id));
     st.limites.olvidar(&format!("entrar:{}", cuenta.correo));
     let primera_vez = !cuenta.totp_activo;
-    let (id, th, correo) = (cuenta.id.clone(), s.token_hash.clone(), cuenta.correo.clone());
+    let (id, th, correo, pendiente) = (cuenta.id.clone(), s.token_hash.clone(), cuenta.correo.clone(), s.sesion.clone());
     // Sesión completa = ficha nueva: la de la contraseña sola (a medias) deja de valer.
     let (ficha, th_nueva) = auth::ficha_nueva();
     let codigos = if primera_vez { Some(auth::codigos_recuperacion()) } else { None };
     let hashes = codigos.as_ref().map(|(_, h)| h.clone());
-    st.db(move |db| {
-        if let Some(h) = hashes {
-            // Primera vez: el autenticador queda activo y se dan los códigos de recuperación.
-            db.poner_totp(&id, Some(&secreto), true)?;
-            db.poner_codigos_recuperacion(&id, &h)?;
-            // El código del propietario ya se usó: no sirve otra vez.
-            db.poner_valor(&clave_restablecimiento(&id), "")?;
-        }
-        db.borrar_sesion(&th)?;
-        db.crear_sesion(&th_nueva, &id, 2, ahora() + auth::SESION_HORAS * 3600)?;
-        db.auditar_servidor(&format!("cuenta:{correo}"), if por_recuperacion { "entrar_recuperacion" } else { "entrar" }, &id, "{}")
-    })
-    .await?;
+    let edad = st
+        .db(move |db| {
+            if let Some(h) = hashes {
+                // Primera vez: el autenticador queda activo y se dan los códigos de recuperación.
+                db.poner_totp(&id, Some(&secreto), true)?;
+                db.poner_codigos_recuperacion(&id, &h)?;
+                // El código del propietario ya se usó: no sirve otra vez.
+                db.poner_valor(&clave_restablecimiento(&id), "")?;
+            }
+            db.borrar_sesion(&th)?;
+            let n = auth::nueva_completa(db, &th_nueva, &pendiente);
+            db.crear_sesion(&n)?;
+            let datos = json!({ "navegador": n.agente, "recordar": n.recordar }).to_string();
+            db.auditar_servidor(&format!("cuenta:{correo}"), if por_recuperacion { "entrar_recuperacion" } else { "entrar" }, &id, &datos)?;
+            Ok(auth::max_edad(&n))
+        })
+        .await?;
     let mut cuerpo = json!({ "cuenta": cuenta_json(&st, &cuenta.id).await? });
     if let Some((codigos, _)) = codigos {
         cuerpo["codigos_recuperacion"] = json!(codigos);
@@ -279,7 +287,7 @@ pub async fn totp(State(st): State<St>, Pendiente(s): Pendiente, Json(p): Json<T
     if let Some(r) = restablecida {
         cuerpo["restablecida"] = r.aviso();
     }
-    Ok(con_cookie(auth::cookie_sesion(&st, &ficha, auth::SESION_HORAS * 3600), cuerpo))
+    Ok(con_cookie(auth::cookie_sesion(&st, &ficha, edad), cuerpo))
 }
 
 pub async fn salir(State(st): State<St>, Pendiente(s): Pendiente) -> Res<Response> {
@@ -299,7 +307,12 @@ pub async fn cuenta_json(st: &St, id: &str) -> Res<Value> {
 }
 
 pub async fn cuenta(State(st): State<St>, u: Usuario) -> Res<Json<Value>> {
-    Ok(Json(cuenta_json(&st, u.id()).await?))
+    let mut v = cuenta_json(&st, u.id()).await?;
+    // 16k: la sesión actual y las abiertas después (aviso «¿eras tú?»).
+    if let (Some(o), Value::Object(extra)) = (v.as_object_mut(), super::sesiones_cuenta::resumen_para_cuenta(&st, &u).await?) {
+        o.extend(extra);
+    }
+    Ok(Json(v))
 }
 
 #[derive(Deserialize)]
@@ -309,6 +322,7 @@ pub struct CambioContrasena {
 }
 
 pub async fn cambiar_contrasena(State(st): State<St>, u: Usuario, Json(p): Json<CambioContrasena>) -> Res<Response> {
+    u.sesion_asentada(&st).await?;
     if !st.limites.intento(&format!("contrasena:{}", u.id()), MAX_INTENTOS, VENTANA) {
         return Err(ErrorApi::demasiados());
     }
@@ -322,14 +336,18 @@ pub async fn cambiar_contrasena(State(st): State<St>, u: Usuario, Json(p): Json<
     let (id, correo) = (u.id().to_string(), u.0.cuenta.correo.clone());
     // Todas las sesiones fuera, también esta: sigue con una ficha nueva.
     let (ficha, th_nueva) = auth::ficha_nueva();
-    st.db(move |db| {
-        db.cambiar_contrasena(&id, &hash)?;
-        db.borrar_sesiones_de(&id, None)?;
-        db.crear_sesion(&th_nueva, &id, 2, ahora() + auth::SESION_HORAS * 3600)?;
-        db.auditar_servidor(&format!("cuenta:{correo}"), "cambiar_contrasena", &id, "{}")
-    })
-    .await?;
-    Ok(([(header::SET_COOKIE, auth::cookie_sesion(&st, &ficha, auth::SESION_HORAS * 3600))], StatusCode::NO_CONTENT).into_response())
+    let actual = u.0.sesion.clone();
+    let edad = st
+        .db(move |db| {
+            db.cambiar_contrasena(&id, &hash)?;
+            db.borrar_sesiones_de(&id, None)?;
+            let n = auth::misma_con_otra_ficha(db, &th_nueva, &actual);
+            db.crear_sesion(&n)?;
+            db.auditar_servidor(&format!("cuenta:{correo}"), "cambiar_contrasena", &id, "{}")?;
+            Ok(auth::max_edad(&n))
+        })
+        .await?;
+    Ok(([(header::SET_COOKIE, auth::cookie_sesion(&st, &ficha, edad))], StatusCode::NO_CONTENT).into_response())
 }
 
 #[derive(Deserialize)]
@@ -341,7 +359,9 @@ pub struct Aceptar {
 }
 
 pub async fn aceptar_invitacion(State(st): State<St>, headers: HeaderMap, ip: Option<Extension<IpCliente>>, Json(p): Json<Aceptar>) -> Res<Response> {
-    if !st.limites.intento(&format!("invitacion:{}", ip_de(ip)), MAX_INTENTOS, VENTANA) {
+    let ip = ip_de(ip);
+    let origen = auth::Origen::de(&headers, &ip);
+    if !st.limites.intento(&format!("invitacion:{ip}"), MAX_INTENTOS, VENTANA) {
         return Err(ErrorApi::demasiados());
     }
     let th = auth::hash_ficha(p.token.trim());
@@ -413,11 +433,11 @@ pub async fn aceptar_invitacion(State(st): State<St>, headers: HeaderMap, ip: Op
         }
     })?;
     let ficha = auth::ficha();
-    let th = auth::hash_ficha(&ficha);
-    let id = cuenta.id.clone();
-    st.db(move |db| db.crear_sesion(&th, &id, 1, ahora() + auth::SESION_PENDIENTE_MIN * 60)).await?;
+    let n = auth::nueva_pendiente(&auth::hash_ficha(&ficha), &cuenta.id, false, &origen);
+    let edad = auth::max_edad(&n);
+    st.db(move |db| db.crear_sesion(&n)).await?;
     Ok(con_cookie(
-        auth::cookie_sesion(&st, &ficha, auth::SESION_HORAS * 3600),
+        auth::cookie_sesion(&st, &ficha, edad),
         json!({ "necesita": "alta_totp", "totp": { "secreto": secreto, "uri": auth::uri_totp(&correo, &secreto) } }),
     ))
 }
@@ -486,6 +506,7 @@ fn clave_totp_pendiente(cuenta: &str) -> String {
 /// `POST /api/cuenta/totp`: prepara un autenticador nuevo (contraseña y
 /// código del actual). El actual sigue valiendo hasta confirmar el nuevo.
 pub async fn totp_nuevo(State(st): State<St>, u: Usuario, Json(p): Json<Reautenticar>) -> Res<Json<Value>> {
+    u.sesion_asentada(&st).await?;
     reautenticar(&st, &u, &p).await?;
     let secreto = auth::nuevo_secreto_totp();
     let caduca = ahora() + 15 * 60;
@@ -502,6 +523,7 @@ pub struct Codigo {
 /// `POST /api/cuenta/totp/confirmar`: un código del autenticador nuevo lo
 /// activa. Se cierran las demás sesiones de la cuenta.
 pub async fn totp_confirmar(State(st): State<St>, u: Usuario, Json(p): Json<Codigo>) -> Res<Response> {
+    u.sesion_asentada(&st).await?;
     if !st.limites.intento(&format!("totp-nuevo:{}", u.id()), MAX_INTENTOS, VENTANA) {
         return Err(ErrorApi::demasiados());
     }
@@ -518,21 +540,26 @@ pub async fn totp_confirmar(State(st): State<St>, u: Usuario, Json(p): Json<Codi
     let (id, correo) = (u.id().to_string(), u.0.cuenta.correo.clone());
     // Todas las sesiones fuera, también esta: sigue con una ficha nueva.
     let (ficha, th_nueva) = auth::ficha_nueva();
-    st.db(move |db| {
-        db.poner_totp(&id, Some(&secreto), true)?;
-        db.poner_totp_ultimo(&id, paso)?;
-        db.poner_valor(&clave, "")?;
-        db.borrar_sesiones_de(&id, None)?;
-        db.crear_sesion(&th_nueva, &id, 2, ahora() + auth::SESION_HORAS * 3600)?;
-        db.auditar_servidor(&format!("cuenta:{correo}"), "cambiar_autenticador", &id, "{}")
-    })
-    .await?;
-    Ok(con_cookie(auth::cookie_sesion(&st, &ficha, auth::SESION_HORAS * 3600), json!({ "cuenta": cuenta_json(&st, u.id()).await? })))
+    let actual = u.0.sesion.clone();
+    let edad = st
+        .db(move |db| {
+            db.poner_totp(&id, Some(&secreto), true)?;
+            db.poner_totp_ultimo(&id, paso)?;
+            db.poner_valor(&clave, "")?;
+            db.borrar_sesiones_de(&id, None)?;
+            let n = auth::misma_con_otra_ficha(db, &th_nueva, &actual);
+            db.crear_sesion(&n)?;
+            db.auditar_servidor(&format!("cuenta:{correo}"), "cambiar_autenticador", &id, "{}")?;
+            Ok(auth::max_edad(&n))
+        })
+        .await?;
+    Ok(con_cookie(auth::cookie_sesion(&st, &ficha, edad), json!({ "cuenta": cuenta_json(&st, u.id()).await? })))
 }
 
 /// `POST /api/cuenta/recuperacion`: códigos de recuperación nuevos (los
 /// anteriores dejan de valer). Pide la contraseña y un código TOTP.
 pub async fn codigos_nuevos(State(st): State<St>, u: Usuario, Json(p): Json<Reautenticar>) -> Res<Json<Value>> {
+    u.sesion_asentada(&st).await?;
     reautenticar(&st, &u, &p).await?;
     let (codigos, hashes) = auth::codigos_recuperacion();
     let (id, correo) = (u.id().to_string(), u.0.cuenta.correo.clone());
@@ -614,6 +641,8 @@ pub async fn restablecer_totp(
     if !su && rol != Rol::Propietario {
         return Err(ErrorApi::prohibido());
     }
+    // Quita más que cerrar una sesión de otro: una sesión nueva tampoco puede (16k).
+    u.sesion_asentada(&st).await?;
     if cuenta == u.id() {
         return Err(ErrorApi::datos("La tuya se cambia en «Mi cuenta» (o, sin el móvil, con un código de recuperación)."));
     }

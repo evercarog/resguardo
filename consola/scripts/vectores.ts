@@ -22,6 +22,7 @@ import { errorVerificacion, fraseVerificacion, partesVerificacion } from "../src
 import { destinoCuerpo, origenCuerpo, partirDireccion, rutaEnAlmacen, usuarioEnAlmacen } from "../src/lib/direccion";
 import { cuerpoBloqueo, cuerpoExistente, detallesExterna, ordenQuitarExterna, diasBloqueo, errorBloqueo, existenteCompleto, externaExtraVacia, textoRetencionDestino } from "../src/lib/copiaExterna";
 import { resultadoConError } from "../src/lib/salud";
+import { pistaAntivirus } from "../src/lib/antivirus";
 import { atrasada, cifrasCopia, estadoCopia, explicarError, fraseCopia, infCopia, proximaDe, ultimaProgramada, ultimaVuelta } from "../src/lib/copia";
 import { bytesRepo, destinoDe, textoResultado, tonoResultado, versionDeVuelta } from "../src/lib/repo";
 import type { CopiaResumen, Equipo, Informe, ReglaHorario, RepoInforme, TareaEnMarcha } from "../src/lib/tipos";
@@ -54,6 +55,13 @@ import { cifrarPaquete, descifrarPaquete } from "../src/lib/cripto/paquete";
 import { publicaRespaldo, salRespaldo, secretoRespaldo } from "../src/lib/cripto/respaldo";
 import { desplegar, errorIntervalo, errorRegla as errorReglaHorario, errorReglas, expresable, horarioParaEnviar, normalizar, proximaVez, reconocer, reglasDe, ultimaVez } from "../src/lib/horario";
 import { diasEnFrase, horarioEnFrase, resumenHorario, resumenReglas } from "../src/lib/formato";
+import { esPrimerPlano, VENTANA_ACCION_MS } from "../src/lib/primerPlano";
+import { copiaAtrasada } from "../src/lib/salud";
+import { horasPerdidas, calendario } from "../src/lib/lineaTiempo";
+import { espacioTotal, fraseEnDisco } from "../src/lib/panel";
+import { agruparAvisos, agruparUrgentes, estadoDeGrupo, primerPaso, titularEstado, ultimaPrueba } from "../src/lib/urgentes";
+import { aDireccion, chipsDe, conVista, deDireccion, deTexto, errorNombreVista, estadosDe, leerVistas, mismosFiltros, pasaEtiquetas, pasaFiltros, textoCuenta, vacios, vistaActual } from "../src/lib/filtrosEquipos";
+import { casaBusqueda, enRango, rangoATexto, rangoDeTexto, SIN_RANGO, tanda, textoFilas, textoSeVen, textoRango, ultimosDias } from "../src/lib/tablas";
 import { ClaveNueva, claveGenerada, estadoCambio, pendientesDeCambio, repartir } from "../src/lib/cambioClave";
 
 const DIR = new URL("../../crates/protocolo/vectors/", import.meta.url);
@@ -508,7 +516,7 @@ if (v1.paquete) {
   igual("infCopia: solo sus versiones y vueltas", [solo.versiones.length, solo.ejecuciones.length], [1, 2]);
   const v = ultimaVuelta(k, informe);
   igual("ultimaVuelta: la del informe, más nueva que la del resumen", [v?.cuando, v?.resultado], [iso(2, 13, 4), "ok"]);
-  igual("proximaDe: del informe si el resumen no la trae", proximaDe(k, informe), iso(5, 13));
+  igual("proximaDe: del informe si el resumen no la trae", proximaDe(k, informe, ahora), iso(5, 13));
   igual("proximaDe: del horario con un agente que no la dice", proximaDe(k, { recibido: iso(2, 14), datos: {} }, ahora), new Date(2026, 9, 5, 13, 0).toISOString());
   igual("proximaDe: null si el informe dice que no hay", proximaDe(k, { recibido: iso(2, 14), datos: { proximas: { docs: null } } }, ahora), null);
   igual("ultimaProgramada: hoy a las 13:00", ultimaProgramada(k.horario, ahora), new Date(2026, 9, 2, 13, 0).getTime());
@@ -516,6 +524,14 @@ if (v1.paquete) {
   cierto("atrasada: no, hecha después de su hora", !atrasada(k, v, false, ahora));
   cierto("atrasada: sí, la última fue ayer y hoy ya tocaba hace 2 h", atrasada(k, { cuando: iso(1, 13, 5), resultado: "ok", mensaje: null }, false, new Date(2026, 9, 2, 15, 30).getTime()));
   cierto("atrasada: no si está en pausa", !atrasada(k, null, true, ahora));
+  // 16y: cada hora y el equipo desconectado desde ayer: atrasada (antes salía «Al día» porque la última hora siempre era de hace < 2 h).
+  const horaria: CopiaResumen = { ...k, horario: { dias: [], horas: [], reglas: [{ tipo: "intervalo", dias: [1, 2, 3, 4, 5, 6, 7], cada_min: 60, desde: "00:00", hasta: "23:00" }] }, proxima: iso(1, 14) };
+  const ayer = { cuando: iso(1, 13, 1), resultado: "ok" as const, mensaje: null };
+  cierto("16y: cada hora, la última hace 26 h: atrasada", atrasada(horaria, ayer, false, ahora));
+  igual("16y: y su estado", estadoCopia(horaria, ayer, false, ahora).texto, "Atrasada");
+  cierto("16y: cada hora, la última hace 40 min: al día", !atrasada(horaria, { ...ayer, cuando: iso(2, 14, 20) }, false, ahora));
+  cierto("16y: cada hora, la última hace 2 h 50 min: atrasada (tocaba a las 13:00)", atrasada(horaria, { ...ayer, cuando: iso(2, 12, 10) }, false, ahora));
+  igual("16y: la próxima que dijo el equipo ya pasó: del horario", proximaDe(horaria, null, ahora), new Date(2026, 9, 2, 16, 0).toISOString());
   igual("estado: al día", estadoCopia(k, v, false, ahora).texto, "Al día");
   igual("estado: con error", estadoCopia(k, { cuando: iso(2, 13, 4), resultado: "fallo", mensaje: null }, false, ahora).texto, "Con error");
   igual("estado: desactivada", estadoCopia({ ...k, activa: false }, v, false, ahora).texto, "Desactivada");
@@ -863,7 +879,7 @@ console.log("\n· Progreso en vivo (v1.25)");
   const m = construirMapa([pc(1), almacen], {}, { cliente: "c", ahora });
   igual("columnas: equipo, repositorio, almacén y los dos espejos", m.nodos.map((n) => `${n.col}:${n.nombre}`), ["0:PC-01", "1:Docs 1", "2:ALMACEN-01", "3:Dropbox", "3:Disco 2"]);
   igual("el espejo que falla, en rojo", m.aristas.filter((a) => a.tipo === "espejo").map((a) => a.tono), ["ok", "bad"]);
-  igual("en palabras (espacios finos aparte)", m.frases.map((x) => x.replace(/[  ]/g, " ")), ["PC-01 copia «Docs 1» a ALMACEN-01 (al día, hace 3 h).", "ALMACEN-01 se refleja en Disco 2 (al día, hace 10 h) y Dropbox (falló hace 2 h)."]);
+  igual("en palabras (espacios finos aparte)", m.frases.map((x) => x.replace(/[  ]/g, " ")), ["PC-01 copia «Docs 1» a ALMACEN-01 (al día, hace 3 h).", "ALMACEN-01 tiene otra copia igual en Disco 2 (al día, hace 10 h) y Dropbox (falló hace 2 h)."]);
   igual(
     "0.7.26: tipo y marcas de cada destino (14z: el almacén, Local + Solo añadir, no Inmutable; Dropbox: Nube)",
     m.nodos.filter((n) => n.col >= 2).map((n) => [n.nombre, n.tipoDestino?.tipo, n.tipoDestino?.inmutable, !!n.tipoDestino?.soloAnadir]),
@@ -1025,6 +1041,178 @@ console.log("\n· Palabras: «copias», no «vueltas»");
   };
   for (const r of raices) if (fs.existsSync(r)) recorrer(r);
   igual("ningún texto con «vuelta(s)» en la consola ni en la ventana", malas, []);
+}
+
+// ---------------------------------------------------------------------------
+// 16z: pista «¿lo bloqueó el antivirus?» cuando un equipo deja de responder justo
+// después de una copia correcta (y no dijo que lo paraban).
+// ---------------------------------------------------------------------------
+console.log("\n· Pista del antivirus (16z)");
+{
+  const ahora = Date.parse("2026-10-25T12:00:00Z");
+  const hace = (min: number) => new Date(ahora - min * 60_000).toISOString();
+  const copia = (cuando: string, estado: "ok" | "aviso" | "fallo" = "ok") => ({ id: "k", nombre: "Documentos", repo: "r", ultima: { cuando, estado } });
+  const res = (x: unknown) => x as Equipo["resumen"];
+  const base = { confirmado: true, modo: "gestionado" as const, conectado: false, ultimo_contacto: hace(60), estado_servicio: "en_marcha" as const, resumen: res({ copias: [copia(hace(65))] }) };
+  igual("desconectado justo tras una copia correcta: pista", pistaAntivirus(base, ahora), hace(65));
+  igual("conectado: nada", pistaAntivirus({ ...base, conectado: true }, ahora), null);
+  igual("sin contacto hace solo 5 min: aún nada", pistaAntivirus({ ...base, ultimo_contacto: hace(5), resumen: res({ copias: [copia(hace(8))] }) }, ahora), null);
+  igual("detenido por un administrador: nada", pistaAntivirus({ ...base, estado_servicio: "detenido_por_admin" }, ahora), null);
+  igual("dejó la consola o trasladado: nada", [pistaAntivirus({ ...base, modo: "local" }, ahora), pistaAntivirus({ ...base, modo: "trasladado" }, ahora)], [null, null]);
+  igual("la copia terminó horas antes del corte: nada", pistaAntivirus({ ...base, resumen: res({ copias: [copia(hace(300))] }) }, ahora), null);
+  igual("la última fue un fallo: nada", pistaAntivirus({ ...base, resumen: res({ copias: [copia(hace(65)), { ...copia(hace(62), "fallo"), id: "k2" }] }) }, ahora), null);
+  igual("con avisos también cuenta", pistaAntivirus({ ...base, resumen: res({ copias: [copia(hace(70), "aviso")] }) }, ahora), hace(70));
+  igual("equipo que sale de la oficina: nada", pistaAntivirus({ ...base, resumen: res({ copias: [copia(hace(65))], movil: { sale_oficina: true } }) }, ahora), null);
+  igual("sin copias: nada", pistaAntivirus({ ...base, resumen: res({ copias: [] }) }, ahora), null);
+}
+
+console.log("\n· 16l: la barra de arriba, solo al cambiar de pantalla o al mandar algo");
+{
+  const t = 1_000_000;
+  igual("lo marcado como fondo, siempre de fondo", esPrimerPlano({ enFondo: true, ahora: t, ultimaAccion: t, enMarcha: 3 }), false);
+  igual("justo después de pulsar o de cambiar de pantalla: primer plano", esPrimerPlano({ enFondo: false, ahora: t + 500, ultimaAccion: t, enMarcha: 0 }), true);
+  igual("un refresco automático lejos de cualquier acción (lo que pide después de su primer await): fondo", esPrimerPlano({ enFondo: false, ahora: t + VENTANA_ACCION_MS + 1, ultimaAccion: t, enMarcha: 0 }), false);
+  igual("una carga en serie que tarda (otra de primer plano en marcha): sigue en primer plano", esPrimerPlano({ enFondo: false, ahora: t + 60_000, ultimaAccion: t, enMarcha: 1 }), true);
+}
+
+console.log("\n· 16y: Estado y cada copia dicen lo mismo, y las horas perdidas en el calendario");
+{
+  const ahora16 = new Date(2026, 9, 26, 10, 30).getTime();
+  const hora = (h: number) => ahora16 - h * 3600_000;
+  const cadaHora = { dias: [1, 2, 3, 4, 5, 6, 7], horas: Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, "0")}:00`) };
+  // Cada hora, la última bien hace 22 h (el equipo se desconectó); la «Próxima» que dijo es de hace 21 h.
+  const k = { id: "k1", nombre: "Docs", repo: "r1", activa: true, horario: cadaHora, ultima: { cuando: new Date(hora(22)).toISOString(), estado: "ok" }, proxima: new Date(hora(21)).toISOString() } as unknown as CopiaResumen;
+  const vuelta = { cuando: new Date(hora(22)).toISOString(), resultado: "ok", mensaje: null } as never;
+  igual("cada hora y 22 h sin copia: atrasada en la copia y en Estado", [atrasada(k, vuelta, false, ahora16), copiaAtrasada(k, ahora16)], [true, true]);
+  const alDia = { ...k, ultima: { cuando: new Date(hora(1)).toISOString(), estado: "ok" }, proxima: new Date(hora(-0.5)).toISOString() } as unknown as CopiaResumen;
+  igual("la última hace 1 h: al día en los dos", [atrasada(alDia, { ...vuelta, cuando: alDia.ultima!.cuando }, false, ahora16), copiaAtrasada(alDia, ahora16)], [false, false]);
+  const nunca = { ...k, ultima: null } as unknown as CopiaResumen;
+  igual("nunca se hizo: no va atrasada (sale «Sin copias todavía»)", copiaAtrasada(nunca, ahora16), false);
+  igual("en pausa con «Pausar»: tampoco", copiaAtrasada({ ...k, pausa: { hasta: null } } as unknown as CopiaResumen, ahora16), false);
+  const sinHorario = { ...k, horario: "cada noche", proxima: new Date(hora(3)).toISOString() } as unknown as CopiaResumen;
+  igual("sin horario que leer: la «Próxima» pasada de más de 1 h", copiaAtrasada(sinHorario, ahora16), true);
+
+  // Las horas perdidas: vueltas hasta hace 6 h y nada después (las de las 2 últimas horas aún no cuentan).
+  const vueltas = [10, 9, 8, 7, 6].map((h) => hora(h) + 2 * 60_000);
+  const perdidas = horasPerdidas(cadaHora, vueltas, hora(48), ahora16);
+  igual("cada hora: las 4 horas sin copia (5:00 a 8:00; la de las 9:00 aún está dentro del margen de 2 h)", perdidas.map((t) => new Date(t).getHours()), [5, 6, 7, 8]);
+  igual("sin vueltas que se sepan, nada (no se sabe desde cuándo existe)", horasPerdidas(cadaHora, [], hora(48), ahora16), []);
+  igual("sin horario (a mano), nada", horasPerdidas(null, vueltas, hora(48), ahora16), []);
+  const cal = calendario([], null, ahora16, 7, false, [], undefined, perdidas);
+  igual("el calendario las marca en sus casillas", cal.celdas.flat().reduce((n, x) => n + x.perdidas, 0), 4);
+}
+
+console.log("\n· 16w: lo que ocupa de verdad en disco, también en el total");
+{
+  const GB = 1e9;
+  const eq = (id: string, repos: { id: string; bytes: number }[]) => ({ id, nombre: id.toUpperCase(), resumen: { repositorios: repos.map((r) => ({ id: r.id, nombre: r.id, destino: "d", bytes: r.bytes })) } }) as unknown as Equipo;
+  const infDe = (repos: { id: string; disco: number | null; leido: string }[]) => ({ recibido: "2026-10-26T08:00:00Z", datos: { repos: repos.map((r) => ({ id: r.id, nombre: r.id, versiones: [], versiones_leidas: null, ejecuciones: [], espacio: r.disco == null ? null : { en_disco_bytes: r.disco, sin_comprimir: null, ratio: null, leido: r.leido }, verificacion: null, prueba_restauracion: null, externa: null })) } }) as unknown as Informe;
+  const equipos = [eq("pc-1", [{ id: "a", bytes: 100 * GB }, { id: "b", bytes: 39 * GB }]), eq("pc-2", [{ id: "c", bytes: 10 * GB }])];
+  const informes = { "pc-1": infDe([{ id: "a", disco: 50 * GB, leido: "2026-10-26T06:00:00Z" }, { id: "b", disco: 20 * GB, leido: "2026-10-25T06:00:00Z" }]), "pc-2": infDe([{ id: "c", disco: null, leido: "" }]) };
+  const t = espacioTotal(equipos, informes);
+  igual("suma lo protegido de todos y lo que ocupa de los que lo miden", [t.protegido / GB, t.enDisco! / GB, t.medidos, t.repos, t.leido], [149, 70, 2, 3, "2026-10-25T06:00:00Z"]);
+  igual("en palabras, con los que faltan por medir", fraseEnDisco(t)?.replace(/\s/g, " "), "149 GB protegidos ocupan 70 GB con todo su historial (medido en 2 de 3 repositorios)");
+  igual("si nadie lo midió, no se dice", fraseEnDisco(espacioTotal([equipos[1]], informes)), null);
+}
+
+console.log("\n· 16m y 16o: ¿estoy protegido? y cada aviso con un solo «qué hago», los repetidos juntos");
+{
+  const u = (quien: string, tono: "bad" | "warn", grupo?: string) => ({ tono, texto: quien, titulo: `${quien} · algo`, detalle: "x", quien, grupo, grupoTexto: grupo === "salud:Sin contacto" ? "sin contacto" : "copia fallida", accion: { texto: "Ver el equipo", href: `/e/${quien}` } });
+  const r = agruparUrgentes([u("PC-1", "warn", "salud:Sin contacto"), u("PC-2", "bad", "salud:Copia fallida"), u("PC-3", "warn", "salud:Sin contacto"), u("PC-4", "warn", "salud:Sin contacto"), u("ALMACEN", "warn")], () => ({ texto: "Ver los equipos", href: "/equipos?filtro=atencion" }));
+  igual("tres sin contacto, en una línea; lo grave, arriba", r.map((x) => x.titulo), ["PC-2 · algo", "3 equipos · sin contacto", "ALMACEN · algo"]);
+  igual("…con sus nombres y una sola acción a la lista", [r[1].detalle, r[1].accion?.href], ["PC-1, PC-3 y PC-4.", "/equipos?filtro=atencion"]);
+  igual("uno solo de un grupo sigue como estaba", r[0].accion?.href, "/e/PC-2");
+  const seis = agruparUrgentes(["A", "B", "C", "D", "E", "F"].map((x) => u(x, "warn", "salud:Sin contacto")), (g) => ({ texto: "Ver los equipos", href: `/equipos?estado=${estadoDeGrupo(g)}` }));
+  igual("más de 4: una sola «y» («A, B, C, D y 2 más»)", seis[0].detalle, "A, B, C, D y 2 más.");
+  igual("«Ver los equipos» de un grupo lleva a su estado", seis[0].accion?.href, "/equipos?estado=sin_conexion");
+  igual("cada grupo, su filtro", ["salud:Copia fallida", "salud:Detenido", "salud:Atrasado", "salud:En pausa", "salud:Con avisos"].map(estadoDeGrupo), ["fallando", "fallando", "atrasada", "pausa", "atencion"]);
+  const tit = (vistos: number, total: number, conFiltros: boolean, urgentes = 0, sinPrimera = 0) => titularEstado({ vistos, total, conFiltros, urgentes, sinPrimera }).texto;
+  igual("sin filtros: «Todo protegido»", tit(200, 200, false), "Todo protegido");
+  igual("con filtros que ocultan equipos: nunca «Todo protegido»", tit(8, 200, true), "Sin problemas en 8 de 200 equipos");
+  igual("…y lo urgente dice en cuántos se mira", tit(8, 200, true, 3), "3 cosas necesitan atención en 8 de 200 equipos");
+  igual("…y los que aún no copian", [tit(8, 200, true, 0, 2), tit(8, 200, true, 0, 8)], ["2 de los 8 equipos filtrados aún no tienen copias", "Sin copias todavía en 8 de 200 equipos"]);
+  igual("filtros que dejan pasar a todos: como sin filtros", [tit(5, 5, true), titularEstado({ vistos: 5, total: 5, conFiltros: true, urgentes: 0, sinPrimera: 0 }).filtrado], ["Todo protegido", false]);
+  igual("ninguno pasa los filtros", [tit(0, 200, true), tit(0, 0, false)], ["Ningún equipo con esos filtros", "Todavía no hay equipos"]);
+  const ahoraP = Date.parse("2026-10-26T12:00:00Z");
+  const eqP = (id: string, repos: string[]) => ({ id, nombre: id, resumen: { repositorios: repos.map((x) => ({ id: x, nombre: x, destino: "d" })) } }) as unknown as Equipo;
+  const infP = (repos: { id: string; prueba?: [string, "ok" | "fallo"]; real?: string }[]) =>
+    ({ recibido: "", datos: { repos: repos.map((r) => ({ id: r.id, nombre: r.id, versiones: [], ejecuciones: [], espacio: null, verificacion: null, prueba_restauracion: r.prueba ? { ultima: r.prueba[0], resultado: r.prueba[1], mensaje_corto: null } : null, restauracion_real: r.real ? { ultima: r.real } : null, externa: null })) } }) as unknown as Informe;
+  const p1 = ultimaPrueba([eqP("a", ["r1", "r2"]), eqP("b", ["r3"])], { a: infP([{ id: "r1", prueba: ["2026-10-20T03:00:00Z", "ok"] }, { id: "r2", real: "2026-10-22T10:00:00Z" }]), b: infP([{ id: "r3", prueba: ["2026-07-01T03:00:00Z", "ok"] }]) }, ahoraP);
+  igual("la última prueba (una restauración real cuenta) y cuántos repositorios tienen una reciente", [p1.cuando, p1.tono, p1.recientes, p1.repos], ["2026-10-22T10:00:00Z", "ok", 2, 3]);
+  const p2 = ultimaPrueba([eqP("a", ["r1"])], { a: infP([{ id: "r1", prueba: ["2026-10-25T03:00:00Z", "fallo"] }]) }, ahoraP);
+  igual("la última falló: hay que mirarlo", [p2.tono, p2.recientes], ["warn", 0]);
+  igual("ninguna: «Nunca»", ultimaPrueba([eqP("a", ["r1"])], {}, ahoraP).cuando, null);
+  const av = (id: string, tipo: string, mensaje: string, visto: string | null = null) => ({ id, tipo, equipo: null, mensaje, creado: "2026-10-26T10:00:00Z", visto_por: visto });
+  const g = agruparAvisos([av("1", "copia_fallida", "«PC-1»: no se pudo conectar con el almacén a las 02:00."), av("2", "copia_fallida", "«PC-2»: no se pudo conectar con el almacén a las 03:15."), av("3", "copia_fallida", "«PC-3»: disco lleno."), av("4", "copia_fallida", "«PC-4»: no se pudo conectar con el almacén a las 02:00.", "Ana")]);
+  igual("avisos: los del mismo motivo en una fila (sin mezclar los ya vistos)", g.map((x) => [x.id, x.repetidos.map((y) => y.id)]), [["1", ["2"]], ["3", []], ["4", []]]);
+  // 16s: el botón de una página vacía.
+  const sin = { id: "e1", nombre: "PC-1", modo: "gestionado", resumen: { copias: [] } } as unknown as Equipo;
+  igual("16s: sin equipos, «Añadir equipo» (y nada si no puede)", [primerPaso("c", [], true)?.texto, primerPaso("c", [], false)], ["Añadir equipo", null]);
+  igual("16s: un solo equipo sin copias, su primera copia ahí mismo", primerPaso("c", [sin], true)?.href, "/c/c/equipos/e1/copias?nueva=1");
+  igual("16s: varios, la lista de equipos", primerPaso("c", [sin, { ...sin, id: "e2" }], true)?.texto, "Ver los equipos");
+}
+
+console.log("\n· 16e: los filtros de los equipos, combinados, en la dirección y en vistas guardadas");
+{
+  const ahora = Date.parse("2026-11-02T12:00:00Z");
+  const hace = (h: number) => new Date(ahora - h * 3600_000).toISOString();
+  const eq = (id: string, x: Partial<Equipo> & { copias?: unknown[]; movil?: unknown } = {}) =>
+    ({ id, nombre: id, so: "windows", version_agente: "0.8.2", rol: "agente", modo: "gestionado", confirmado: true, conectado: true, ultimo_contacto: hace(0.1), estado_servicio: "en_marcha", etiquetas: [], ...x, resumen: { copias: x.copias ?? [{ id: "k", nombre: "Docs", repo: "r", ultima: { cuando: hace(2), estado: "ok" } }], movil: x.movil ?? null } }) as unknown as Equipo;
+  const bien = eq("PC-1", { etiquetas: ["Contabilidad", "Planta"] });
+  const falla = eq("PC-2", { etiquetas: ["Contabilidad"], copias: [{ id: "k", nombre: "Docs", repo: "r", ultima: { cuando: hace(2), estado: "fallo" } }] });
+  const portatil = eq("PORTATIL-1", { conectado: false, ultimo_contacto: hace(30), movil: { sale_oficina: true }, version_agente: "0.8.1" });
+  const almacen = eq("ALMACEN", { rol: "almacenamiento", copias: [] });
+  const todos = [bien, falla, portatil, almacen];
+  const sedes: Record<string, string> = { "PC-1": "planta", "PC-2": "oficina", "PORTATIL-1": "oficina", ALMACEN: "oficina" };
+  const ctx = { sede: (e: Equipo) => sedes[e.id], sistema: () => "Windows 11", tipo: () => "Físico" };
+  const pasan = (f: ReturnType<typeof vacios>) => todos.filter((e) => pasaFiltros(e, f, ctx, ahora)).map((e) => e.id);
+  igual("sin filtros, todos", pasan(vacios()), ["PC-1", "PC-2", "PORTATIL-1", "ALMACEN"]);
+  igual("estados de cada uno", todos.map((e) => [...estadosDe(e, ahora)].sort()), [["al_dia"], ["atencion", "fallando"], ["atencion", "fuera", "sin_conexion"], ["al_dia"]]);
+  igual("dos estados: cualquiera de ellos", pasan({ ...vacios(), estados: ["fallando", "fuera"] }), ["PC-2", "PORTATIL-1"]);
+  igual("estado y sede a la vez: los dos", pasan({ ...vacios(), estados: ["atencion"], sedes: ["oficina"] }), ["PC-2", "PORTATIL-1"]);
+  igual("varias sedes: cualquiera", pasan({ ...vacios(), sedes: ["planta", "oficina"] }).length, 4);
+  igual("etiquetas, cualquiera", pasan({ ...vacios(), etiquetas: ["planta", "Contabilidad"] }), ["PC-1", "PC-2"]);
+  igual("etiquetas, todas (sin distinguir mayúsculas)", pasan({ ...vacios(), etiquetas: ["planta", "contabilidad"], modo: "todas" }), ["PC-1"]);
+  igual("sin etiquetas pedidas, también los que no tienen", pasaEtiquetas({ etiquetas: [] }, []), true);
+  igual("guardan copias y versión del agente", [pasan({ ...vacios(), almacen: true }), pasan({ ...vacios(), versiones: ["0.8.1"] })], [["ALMACEN"], ["PORTATIL-1"]]);
+  igual("servidor físico: lo decide el contexto", todos.filter((e) => pasaFiltros(e, { ...vacios(), infra: "srv:hv-01" }, { ...ctx, enInfra: (x) => x.id === "ALMACEN" }, ahora)).map((e) => e.id), ["ALMACEN"]);
+
+  const f = { ...vacios(), estados: ["atrasada" as const], sedes: ["planta"], etiquetas: ["Contabilidad", "Puesto de oficina"], modo: "todas" as const, infra: "cj:hv-01:tank" };
+  const q = aDireccion(f, new URLSearchParams("vista=mapa"));
+  igual("en la dirección, sin tocar lo demás", q.toString(), "vista=mapa&estado=atrasada&sede=planta&et=Contabilidad&et=Puesto+de+oficina&modo=todas&infra=cj%3Ahv-01%3Atank");
+  igual("ida y vuelta por la dirección", mismosFiltros(deDireccion(q), f), true);
+  igual("«?filtro=atencion» de antes (16o) es «Necesitan atención»", deDireccion(new URLSearchParams("filtro=atencion")).estados, ["atencion"]);
+  igual("lo que no vale en la dirección se descarta", [deDireccion(new URLSearchParams("estado=raro")).estados, deDireccion(new URLSearchParams("infra=../x")).infra], [[], ""]);
+  igual("chips quitables", chipsDe(f, { sede: (id) => (id === "planta" ? "Planta" : null), infra: () => "hv-01 · tank" }).map((c) => c.texto), ["Atrasados", "Sede: Planta", "Etiqueta: Contabilidad (todas)", "Etiqueta: Puesto de oficina (todas)", "En hv-01 · tank"]);
+  igual("quitar un chip deja el resto", chipsDe(f)[1].sin.sedes, []);
+  igual("la cuenta", [textoCuenta(8, 30), textoCuenta(30, 30), textoCuenta(1, 1)], ["8 de 30 equipos", "30 equipos", "1 equipo"]);
+
+  let vs = conVista([], "Servidores de la planta", f);
+  vs = conVista(vs, "Fallando", { ...vacios(), estados: ["fallando"] });
+  igual("vistas guardadas: la que coincide con los filtros puestos (sin importar el orden)", vistaActual(vs, { ...f, etiquetas: ["Puesto de oficina", "Contabilidad"] })?.nombre, "Servidores de la planta");
+  igual("guardar con el mismo nombre la cambia", conVista(vs, "fallando", { ...vacios(), estados: ["atrasada"] }).map((v) => [v.nombre, deTexto(v.filtros).estados]), [["Servidores de la planta", ["atrasada"]], ["fallando", ["atrasada"]]]);
+  igual("se leen de vuelta (y lo que no tiene forma, fuera)", leerVistas(JSON.stringify([...vs, { nombre: "" }, 3])).length, 2);
+  igual("texto roto: ninguna", leerVistas("{"), []);
+  igual("nombre de la vista: hace falta uno y algún filtro", [errorNombreVista("", f), errorNombreVista("Algo", vacios()), errorNombreVista("Algo", f)], ["Ponle un nombre.", "Elige antes algún filtro.", null]);
+}
+
+console.log("\n· 16t: listas largas: buscar, rango de fechas y «Ver más»");
+{
+  const dia = (a: number, m: number, d: number, h = 0) => new Date(a, m - 1, d, h).getTime();
+  const r = { desde: dia(2026, 10, 3), hasta: dia(2026, 10, 9) };
+  igual("el rango incluye el primer y el último día enteros", [enRango(new Date(dia(2026, 10, 3, 0)).toISOString(), r), enRango(new Date(dia(2026, 10, 9, 23)).toISOString(), r), enRango(new Date(dia(2026, 10, 10, 0)).toISOString(), r), enRango(new Date(dia(2026, 10, 2, 23)).toISOString(), r)], [true, true, false, false]);
+  igual("al revés vale igual", enRango(dia(2026, 10, 5, 12), { desde: r.hasta, hasta: r.desde }), true);
+  igual("sin rango, todo (también sin fecha); con rango, lo que no tiene fecha queda fuera", [enRango(null, SIN_RANGO), enRango("no es fecha", r)], [true, false]);
+  const ahora = dia(2026, 11, 2, 15);
+  const u7 = ultimosDias(7, ahora);
+  igual("los últimos 7 días, hoy incluido", [enRango(dia(2026, 10, 27, 1), u7), enRango(dia(2026, 10, 26, 23), u7)], [true, false]);
+  igual("en palabras", [textoRango(SIN_RANGO, ahora), textoRango({ desde: dia(2026, 11, 2), hasta: dia(2026, 11, 2) }, ahora)], ["Todas las fechas", "Hoy"]);
+  igual("en la dirección, ida y vuelta", rangoDeTexto(rangoATexto(r)), r);
+  igual("dirección rota: sin rango", rangoDeTexto("2026-13-99..x"), SIN_RANGO);
+  igual("buscar: todas las palabras, sin tildes ni mayúsculas, en cualquiera de los campos", [casaBusqueda("recepcion ana", "Contabilidad de RECEPCIÓN", "Ana"), casaBusqueda("recepcion luis", "RECEPCIÓN", "Ana"), casaBusqueda("  ", "x")], [true, false, true]);
+  const xs = Array.from({ length: 120 }, (_, i) => i);
+  igual("una tanda y lo que queda", [tanda(xs, 50).visibles.length, tanda(xs, 50).quedan, tanda(xs, 200).quedan], [50, 70, 0]);
+  igual("lo que se dice", [textoSeVen(50, 1230), textoFilas(12, 80, "restauración", "restauraciones"), textoFilas(1, 1, "orden", "órdenes")], ["Se ven 50 de 1230; quedan 1180.", "12 de 80 restauraciones", "1 orden"]);
 }
 
 console.log(`\n${total - fallos} de ${total} comprobaciones correctas.`);
