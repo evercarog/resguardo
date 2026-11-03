@@ -2,6 +2,26 @@
 
 Cada sesión de un asistente de IA añade una entrada **al principio** (la más reciente arriba). Ver `AGENTS.md`.
 
+## 2026-11-02 · `ia/083-pulido` · Versión 0.8.3: unión de las cinco ramas, revisión general y publicación
+
+Claude Code (Opus), en autónomo. Pedido: «Haz un análisis general de la app y saca una nueva versión… trabaja autónomamente hasta que publiques» (con el visto bueno para subir la versión; firma y `gh release create`, el responsable).
+
+**Unido** (`--no-ff`, comprobaciones completas tras cada una): `ia/083-antivirus` (16z), `ia/083-consola` (16j, 16l, 16m, 16y, 16w y B), `ia/083-servidor` (16k, 16a, 16f, 16d, 16g, 16b, 16h), `ia/083-comodidad` (16e, 16t, 16r), `ia/083-rendimiento` (16q, 16x pasos 0 y 7, 16v). Arreglo de la unión: «Comprobar todo» usaba el filtro de etiqueta que 16e quitó. CI: los fallos que traía la rama desde el 2026-10-26 (avisos de cargo-deny y `qemu-user-static` en Ubuntu 26), arreglados.
+
+**Revisión general** (tres revisiones en paralelo, solo lectura: servidor y protocolo, agente e instaladores, consola). Sin bloqueos. Arreglado:
+
+- **Servidor:** restablecer el segundo paso de otro y `PUT /api/servidor/sesiones` piden sesión asentada (una sesión robada y recién abierta se saltaba la regla de las 24 h de 16k); sin «Recordar», cookie de sesión (sin `Max-Age`); la capa de gzip deja tal cual una respuesta que pasa del tope en vez de dar 500.
+- **Agente e instalador:** el Servidor de copias arranca antes de la comprobación del instalador (los códigos 6 y 7 lo dejaban parado); el servicio parado en la primera vuelta se arranca una vez; motivo con palabras para el código 7; al volver atrás, Servidor de copias en marcha y comprobación de que el servicio arrancó de verdad.
+- **Consola:** Estado dice cuándo mira solo los equipos filtrados y nunca «Todo protegido» con equipos ocultos; «y … y 2 más»; «Ver los equipos» de cada grupo lleva a su estado; carreras al cambiar de cliente (informes, marcas «no llega»); «Comprobar todo» con nombres de sede y servidor y los kits sin soporte resumidos; avisos del cliente siempre visibles con filtro de etiqueta; avisos breves encima de la barra del móvil.
+
+Lo que no entró, en `plan-mejoras.md` 16aa. Contrato de la 0.8.3 numerado: v1.97 a v1.101.
+
+**Comprobado:** `cargo fmt`, `clippy -D warnings` (servidor con `consola-integrada` y agente), pruebas del servidor (todas bien) y del agente (492 bien; fallan las 4 que restauran sin permisos de administrador en este PC, ver la entrada siguiente), consola `check`, `build`, `test:vectores`, `test:sin-referencias`; CI en GitHub.
+
+**Sin probar en real:** «Comprobar todo» con agentes de verdad; el comportamiento real de Defender con los .exe nuevos (16z); las sesiones en un navegador de verdad.
+
+**Puntos a medias que salen así** (ver el plan): 16k (correo de sesión nueva; el dueño de un cliente cerrando sesiones de otros), 16d, 16b (en la ventana del agente), 16o, 16p, 16n, 16e (filtro por anillo), 16t (Copias y Equipos como tablas largas), 16x pasos 1–6.
+
 ## 2026-11-02 · `ia/083-pulido` · Por qué fallan en este PC las pruebas que restauran
 
 Las pruebas del agente que restauran con restic de verdad (`restaurar_desde_el_espejo`, `prueba_desde_una_carpeta_con_restic`, `espejo_del_equipo_con_restic_y_rclone`, `repositorio_directo_en_una_nube_conectada`) y el paso 4c del e2e fallan en Windows con «Windows no permite acceder…». En el CI pasan. Causa, reproducida a mano con restic 0.19.1: al restaurar, restic pone también los permisos (DACL) de las carpetas de arriba, entre ellas la de los perfiles de usuario. Con un usuario **sin elevar**, después ya no puede escribir en esa carpeta restaurada y falla al ponerle la fecha («failed to restore timestamp … Access is denied», salida 1); esas carpetas quedan además sin poder borrarse sin elevar. En el CI el usuario es administrador y el agente real corre como SYSTEM, así que no afecta a las copias de verdad. Queda por valorar: que la prueba de restauración trate como aviso, y no como fallo, un error de fecha o de permisos en una carpeta cuando todos los archivos restaurados coinciden en su huella; y si «Recuperar en el equipo» (15mm) restaura los permisos de las carpetas padre.
