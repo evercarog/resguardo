@@ -5,11 +5,11 @@
 // navegador a otro; para compartir una vista, el enlace (la dirección lleva los filtros).
 import { actual, app } from "./estado.svelte";
 import { guardar, leerTexto } from "./recordar";
-import { conVista, deTexto, aTexto, leerVistas, sinVista, vacios, type ContextoFiltros, type FiltrosEquipos, type VistaGuardada } from "./filtrosEquipos";
-import { sedeDeEquipo } from "./sedes";
+import { conVista, deTexto, aTexto, leerVistas, sinVista, vacios, type ContextoFiltros, type FiltrosEquipos, type NombresFiltros, type VistaGuardada } from "./filtrosEquipos";
+import { sedeDeEquipo, sedePorId } from "./sedes";
 import { grupoSistema } from "./datosBasicos";
 import { grupoTipo } from "./tipoEquipo";
-import { equipoEnFiltroInfra, leerFiltroInfra } from "./infra";
+import { equipoEnFiltroInfra, leerFiltroInfra, textoFiltroInfra } from "./infra";
 
 const estado = $state<{ clave: string; f: FiltrosEquipos; vistas: VistaGuardada[] }>({ clave: "", f: vacios(), vistas: [] });
 
@@ -74,5 +74,15 @@ export function contextoFiltros(): ContextoFiltros {
       const f = leerFiltroInfra(v, infra);
       return !!f && equipoEnFiltroInfra(infra, e.id, f);
     },
+  };
+}
+
+/** Los nombres de las sedes y de la infraestructura del cliente abierto, para los chips (`chipsDe`). */
+export function nombresFiltros(): NombresFiltros {
+  const org = actual.organizacion;
+  const infra = actual.infra;
+  return {
+    sede: (id) => sedePorId(org, id)?.nombre ?? null,
+    infra: (v) => textoFiltroInfra(leerFiltroInfra(v, infra), infra) || null,
   };
 }

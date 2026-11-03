@@ -4,8 +4,9 @@
 // scripts/vectores.ts.
 import type { Equipo, Informe } from "./tipos";
 import { PESO, type Tono } from "./salud";
-import { lista } from "./formato";
+import { lista, plural } from "./formato";
 import { informeDe } from "./repo";
+import type { EstadoFiltro } from "./filtrosEquipos";
 
 export interface Urgente {
   tono: Tono;
@@ -48,9 +49,52 @@ export function agruparUrgentes(us: Urgente[], hrefGrupo: (grupo: string) => { t
       const tono = g.reduce<Tono>((t, x) => (PESO[x.tono] < PESO[t] ? x.tono : t), "ok");
       const nombres = g.map((x) => x.quien ?? x.titulo ?? x.texto);
       const texto = `${g.length} equipos · ${u.grupoTexto ?? "necesitan atención"}`;
-      return { tono, texto, titulo: texto, detalle: nombres.length > 4 ? `${lista(nombres.slice(0, 4))} y ${nombres.length - 4} más.` : `${lista(nombres)}.`, accion: hrefGrupo(u.grupo!) } satisfies Urgente;
+      return { tono, texto, titulo: texto, detalle: nombres.length > 4 ? `${nombres.slice(0, 4).join(", ")} y ${nombres.length - 4} más.` : `${lista(nombres)}.`, accion: hrefGrupo(u.grupo!) } satisfies Urgente;
     })
     .sort((a, b) => PESO[a.tono] - PESO[b.tono]);
+}
+
+/**
+ * El filtro de Equipos que corresponde a un grupo de urgentes (`salud:<texto>`): «Ver los
+ * equipos» de «3 equipos · sin contacto» lleva a los que no se conectan, no a todos los que
+ * necesitan atención.
+ */
+export function estadoDeGrupo(grupo: string): EstadoFiltro {
+  switch (grupo) {
+    case "salud:Sin contacto":
+      return "sin_conexion";
+    case "salud:Copia fallida":
+    case "salud:Detenido":
+      return "fallando";
+    case "salud:Atrasado":
+      return "atrasada";
+    case "salud:En pausa":
+      return "pausa";
+    default:
+      return "atencion";
+  }
+}
+
+/**
+ * El titular de Estado. Con filtros que dejan equipos fuera, nunca dice «Todo protegido»: dice
+ * en cuántos equipos se mira («… en 8 de 200 equipos»), porque los ocultos pueden fallar.
+ * `vistos`: los que pasan los filtros; `total`: todos (sin duplicados); `sinPrimera`: los vistos
+ * que aún no han hecho su primera copia; `urgentes`: lo que necesita atención entre los vistos.
+ */
+export function titularEstado(o: { vistos: number; total: number; conFiltros: boolean; urgentes: number; sinPrimera: number }): { texto: string; filtrado: boolean } {
+  const filtrado = o.conFiltros && o.vistos < o.total;
+  if (!o.vistos) return { texto: o.total && o.conFiltros ? "Ningún equipo con esos filtros" : "Todavía no hay equipos", filtrado };
+  const en = filtrado ? ` en ${o.vistos} de ${plural(o.total, "equipo", "equipos")}` : "";
+  if (o.urgentes) return { texto: `${o.urgentes === 1 ? "1 cosa necesita atención" : `${o.urgentes} cosas necesitan atención`}${en}`, filtrado };
+  if (o.sinPrimera === o.vistos) return { texto: `Sin copias todavía${en}`, filtrado };
+  if (o.sinPrimera)
+    return {
+      texto: filtrado
+        ? `${o.sinPrimera} de los ${o.vistos} equipos filtrados ${o.sinPrimera === 1 ? "aún no tiene copias" : "aún no tienen copias"}`
+        : `${plural(o.sinPrimera, "equipo aún sin copias", "equipos aún sin copias")}; el resto, protegido`,
+      filtrado,
+    };
+  return { texto: filtrado ? `Sin problemas${en}` : "Todo protegido", filtrado };
 }
 
 /** El plazo tras el que una prueba de restauración ya no cuenta (como en la regla 3-2-1-1-0). */

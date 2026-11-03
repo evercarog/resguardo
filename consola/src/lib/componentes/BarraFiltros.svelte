@@ -9,7 +9,7 @@
   import { Bookmark, BookmarkPlus, ChevronDown, Settings2, SlidersHorizontal, X } from "@lucide/svelte";
   import type { Equipo } from "$lib/tipos";
   import { actual, puede, reloj } from "$lib/estado.svelte";
-  import { contextoFiltros, filtrosEquipos } from "$lib/filtrosEquipos.svelte";
+  import { contextoFiltros, filtrosEquipos, nombresFiltros } from "$lib/filtrosEquipos.svelte";
   import {
     aDireccion,
     alternar,
@@ -29,8 +29,7 @@
     type FiltrosEquipos,
   } from "$lib/filtrosEquipos";
   import { etiquetasDe, mismaEtiqueta } from "$lib/etiquetas.svelte";
-  import { opcionesFiltroInfra, textoFiltroInfra, leerFiltroInfra } from "$lib/infra";
-  import { sedePorId } from "$lib/sedes";
+  import { opcionesFiltroInfra } from "$lib/infra";
   import EtiquetaChip from "./EtiquetaChip.svelte";
   import GestionarEtiquetas from "./GestionarEtiquetas.svelte";
 
@@ -115,10 +114,7 @@
   const opcionesInfra = $derived(opcionesFiltroInfra(actual.infra));
 
   const chips = $derived(
-    chipsDe(f, {
-      sede: (id) => sedePorId(org, id)?.nombre ?? null,
-      infra: (v) => textoFiltroInfra(leerFiltroInfra(v, actual.infra), actual.infra) || null,
-    }),
+    chipsDe(f, nombresFiltros()),
   );
 
   // --- Vistas guardadas ---

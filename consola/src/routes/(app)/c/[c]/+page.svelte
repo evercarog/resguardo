@@ -8,7 +8,7 @@
   // después, todo lo de las copias junto (regla 3-2-1-1-0 y mapa), la lista de
   // las órdenes que esperan, la salud de cada equipo con sus 14 días, los
   // repositorios y cuánto se guarda en cada destino con su tendencia.
-  import { Archive, CalendarClock, ChevronRight, CircleAlert, CircleCheck, Clock, Cloud, Database, HardDrive, Lock, LockKeyhole, Monitor, Plus, Server, ShieldCheck, TriangleAlert, X, ListChecks } from "@lucide/svelte";
+  import { Archive, CalendarClock, ChevronRight, CircleAlert, CircleCheck, Clock, Cloud, Database, HardDrive, Lock, LockKeyhole, Monitor, Plus, Server, ShieldCheck, TriangleAlert, X, ListChecks, Filter } from "@lucide/svelte";
   import Anuncio from "$lib/componentes/Anuncio.svelte";
   import { actual, puede, reloj } from "$lib/estado.svelte";
   import { bytes, cuandoFrase, cuentaAtras, fechaLarga, numero, plural, relativo } from "$lib/formato";
@@ -22,7 +22,7 @@
   import Esqueleto from "$lib/componentes/Esqueleto.svelte";
   import BarraFiltros from "$lib/componentes/BarraFiltros.svelte";
   import { agruparPorEtiqueta, gruposPorEtiqueta } from "$lib/etiquetas.svelte";
-  import { contextoFiltros, filtrosEquipos } from "$lib/filtrosEquipos.svelte";
+  import { contextoFiltros, filtrosEquipos, nombresFiltros } from "$lib/filtrosEquipos.svelte";
   import { chipsDe, hayFiltros, pasaFiltros, vacios } from "$lib/filtrosEquipos";
   import EtiquetaChip from "$lib/componentes/EtiquetaChip.svelte";
   import TarjetaEquipo from "$lib/componentes/TarjetaEquipo.svelte";
@@ -45,7 +45,7 @@
   // Tarea 8: cuántas copias cumplen la regla 3-2-1-1-0 (y las que dejaron de cumplir, sin urgencia).
   import ReglaCliente from "$lib/componentes/regla/ReglaCliente.svelte";
 
-  import { agruparUrgentes, ultimaPrueba, PRUEBA_VALE_DIAS, type Urgente } from "$lib/urgentes";
+  import { agruparUrgentes, estadoDeGrupo, titularEstado, ultimaPrueba, PRUEBA_VALE_DIAS, type Urgente } from "$lib/urgentes";
   import { catalogoDe } from "$lib/catalogoDestinos.svelte";
   import { listaFuncionales } from "$lib/funcionales.svelte";
   import { reglasDelCliente } from "$lib/regla321";
@@ -115,7 +115,7 @@
             accion: { texto: "Ver el repositorio", href: `/c/${c}/equipos/${e.id}/repositorios/${encodeURIComponent(r.id)}#t-espejos` },
           });
     if (actual.avisosAbiertos) out.push({ tono: "warn", texto: `${plural(actual.avisosAbiertos, "aviso sin revisar", "avisos sin revisar")}.`, accion: { texto: "Ver los avisos", href: `/c/${c}/avisos` } });
-    return agruparUrgentes(out, () => ({ texto: "Ver los equipos", href: `/c/${c}/equipos?filtro=atencion` }));
+    return agruparUrgentes(out, (g) => ({ texto: "Ver los equipos", href: `/c/${c}/equipos?estado=${estadoDeGrupo(g)}` }));
   });
   const ultima = $derived(
     delFiltro
@@ -130,24 +130,14 @@
   );
   /** Equipos que aún no han hecho su primera copia: sin eso no se dice «Todo protegido». */
   const sinPrimera = $derived(saludes.filter((x) => x.texto === "Sin copias todavía" || x.texto === "Sin copias").length);
-  const titular = $derived(
-    !delFiltro.length
-      ? actual.equipos.length && conFiltros
-        ? "Ningún equipo con esos filtros"
-        : "Todavía no hay equipos"
-      : urgentes.length
-        ? urgentes.length === 1
-          ? "1 cosa necesita atención"
-          : `${urgentes.length} cosas necesitan atención`
-        : sinPrimera === delFiltro.length
-          ? "Sin copias todavía"
-          : sinPrimera
-            ? `${plural(sinPrimera, "equipo aún sin copias", "equipos aún sin copias")}; el resto, protegido`
-            : "Todo protegido",
-  );
+  // Con filtros que dejan equipos fuera, el titular dice en cuántos se mira y nunca «Todo protegido».
+  const cabecera = $derived(titularEstado({ vistos: delFiltro.length, total: sinRepetir.length, conFiltros, urgentes: urgentes.length, sinPrimera }));
+  const titular = $derived(cabecera.texto);
   const tonoTitular = $derived<Tono>(
-    !delFiltro.length ? "neutral" : urgentes.length ? (urgentes.some((u) => u.tono === "bad") ? "bad" : "warn") : sinPrimera === delFiltro.length ? "neutral" : sinPrimera ? "info" : "ok",
+    !delFiltro.length ? "neutral" : urgentes.length ? (urgentes.some((u) => u.tono === "bad") ? "bad" : "warn") : sinPrimera === delFiltro.length ? "neutral" : sinPrimera || cabecera.filtrado ? "info" : "ok",
   );
+  /** Los filtros puestos, en palabras (los mismos chips que la barra). */
+  const textoFiltros = $derived(chipsDe(filtrosEquipos.valor, nombresFiltros()).map((x) => x.texto).join(", "));
   /** Con un solo equipo sin copias, cuándo será la primera. */
   const pistaPrimera = $derived(sinPrimera && sinPrimera === delFiltro.length ? saludes.find((x) => x.texto === "Sin copias todavía")?.detalle : undefined);
   const cuenta = (t: Tono | "sin") => (t === "sin" ? saludes.filter((s) => s.texto === "Sin contacto").length : saludes.filter((s) => s.tono === t).length);
@@ -248,6 +238,14 @@
               Añade el primer equipo de {actual.cliente.nombre}: instala el agente y escribe el código que te daremos.
             {/if}
           </p>
+          {#if conFiltros && delFiltro.length}
+            <!-- Los filtros de Equipos también valen aquí: que se note junto al titular. -->
+            <p class="con-filtros">
+              <Filter size={14} aria-hidden="true" />
+              <span>{cabecera.filtrado ? `Solo ves ${delFiltro.length} de ${plural(sinRepetir.length, "equipo", "equipos")}: el resto queda oculto por los filtros` : "Con filtros"} ({textoFiltros}).</span>
+              <button type="button" class="btn btn-sm" onclick={() => filtrosEquipos.poner(vacios())}><X size={14} />Quitar los filtros</button>
+            </p>
+          {/if}
         </div>
       </div>
       {#if delFiltro.length}
@@ -255,7 +253,7 @@
         <dl class="tres">
           <div class="t-c">
             <dt><ShieldCheck size={14} aria-hidden="true" />Equipos al día</dt>
-            <dd class="num">{alDia}<small>{` de ${delFiltro.length}`}</small></dd>
+            <dd class="num">{alDia}<small>{` de ${delFiltro.length}${cabecera.filtrado ? " filtrados" : ""}`}</small></dd>
             <span class="barra" aria-hidden="true">
               {#each ["ok", "warn", "bad", "paused", "neutral"] as const as t (t)}
                 {@const n = saludes.filter((x) => x.tono === t).length}
@@ -467,7 +465,7 @@
 {#if fuera && actual.cliente}<AlmacenEnOtraConsola cliente={actual.cliente} almacen={fuera.almacen} consolas={fuera.consolas} onclose={() => (fuera = null)} />{/if}
 
 {#if comprobarTodo && actual.cliente}
-  <ComprobarTodo cliente={actual.cliente} equipos={delFiltro} {reglas} filtro={chipsDe(filtrosEquipos.valor).map((c) => c.texto).join(", ")} onclose={() => (comprobarTodo = false)} />
+  <ComprobarTodo cliente={actual.cliente} equipos={delFiltro} {reglas} filtro={textoFiltros} onclose={() => (comprobarTodo = false)} />
 {/if}
 
 {#if copiar && actual.cliente}
@@ -590,6 +588,18 @@
   .cab p {
     margin: 6px 0 0;
     color: var(--text-2);
+  }
+  .cab p.con-filtros {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    margin-top: var(--sp-3);
+    font-size: var(--fs-sm);
+    color: var(--text-1);
+  }
+  .con-filtros :global(svg) {
+    flex: none;
   }
   .urgentes {
     display: flex;

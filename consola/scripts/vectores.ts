@@ -59,7 +59,7 @@ import { esPrimerPlano, VENTANA_ACCION_MS } from "../src/lib/primerPlano";
 import { copiaAtrasada } from "../src/lib/salud";
 import { horasPerdidas, calendario } from "../src/lib/lineaTiempo";
 import { espacioTotal, fraseEnDisco } from "../src/lib/panel";
-import { agruparAvisos, agruparUrgentes, primerPaso, ultimaPrueba } from "../src/lib/urgentes";
+import { agruparAvisos, agruparUrgentes, estadoDeGrupo, primerPaso, titularEstado, ultimaPrueba } from "../src/lib/urgentes";
 import { aDireccion, chipsDe, conVista, deDireccion, deTexto, errorNombreVista, estadosDe, leerVistas, mismosFiltros, pasaEtiquetas, pasaFiltros, textoCuenta, vacios, vistaActual } from "../src/lib/filtrosEquipos";
 import { casaBusqueda, enRango, rangoATexto, rangoDeTexto, SIN_RANGO, tanda, textoFilas, textoSeVen, textoRango, ultimosDias } from "../src/lib/tablas";
 import { ClaveNueva, claveGenerada, estadoCambio, pendientesDeCambio, repartir } from "../src/lib/cambioClave";
@@ -1122,6 +1122,17 @@ console.log("\n· 16m y 16o: ¿estoy protegido? y cada aviso con un solo «qué 
   igual("tres sin contacto, en una línea; lo grave, arriba", r.map((x) => x.titulo), ["PC-2 · algo", "3 equipos · sin contacto", "ALMACEN · algo"]);
   igual("…con sus nombres y una sola acción a la lista", [r[1].detalle, r[1].accion?.href], ["PC-1, PC-3 y PC-4.", "/equipos?filtro=atencion"]);
   igual("uno solo de un grupo sigue como estaba", r[0].accion?.href, "/e/PC-2");
+  const seis = agruparUrgentes(["A", "B", "C", "D", "E", "F"].map((x) => u(x, "warn", "salud:Sin contacto")), (g) => ({ texto: "Ver los equipos", href: `/equipos?estado=${estadoDeGrupo(g)}` }));
+  igual("más de 4: una sola «y» («A, B, C, D y 2 más»)", seis[0].detalle, "A, B, C, D y 2 más.");
+  igual("«Ver los equipos» de un grupo lleva a su estado", seis[0].accion?.href, "/equipos?estado=sin_conexion");
+  igual("cada grupo, su filtro", ["salud:Copia fallida", "salud:Detenido", "salud:Atrasado", "salud:En pausa", "salud:Con avisos"].map(estadoDeGrupo), ["fallando", "fallando", "atrasada", "pausa", "atencion"]);
+  const tit = (vistos: number, total: number, conFiltros: boolean, urgentes = 0, sinPrimera = 0) => titularEstado({ vistos, total, conFiltros, urgentes, sinPrimera }).texto;
+  igual("sin filtros: «Todo protegido»", tit(200, 200, false), "Todo protegido");
+  igual("con filtros que ocultan equipos: nunca «Todo protegido»", tit(8, 200, true), "Sin problemas en 8 de 200 equipos");
+  igual("…y lo urgente dice en cuántos se mira", tit(8, 200, true, 3), "3 cosas necesitan atención en 8 de 200 equipos");
+  igual("…y los que aún no copian", [tit(8, 200, true, 0, 2), tit(8, 200, true, 0, 8)], ["2 de los 8 equipos filtrados aún no tienen copias", "Sin copias todavía en 8 de 200 equipos"]);
+  igual("filtros que dejan pasar a todos: como sin filtros", [tit(5, 5, true), titularEstado({ vistos: 5, total: 5, conFiltros: true, urgentes: 0, sinPrimera: 0 }).filtrado], ["Todo protegido", false]);
+  igual("ninguno pasa los filtros", [tit(0, 200, true), tit(0, 0, false)], ["Ningún equipo con esos filtros", "Todavía no hay equipos"]);
   const ahoraP = Date.parse("2026-10-26T12:00:00Z");
   const eqP = (id: string, repos: string[]) => ({ id, nombre: id, resumen: { repositorios: repos.map((x) => ({ id: x, nombre: x, destino: "d" })) } }) as unknown as Equipo;
   const infP = (repos: { id: string; prueba?: [string, "ok" | "fallo"]; real?: string }[]) =>
