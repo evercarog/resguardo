@@ -207,9 +207,10 @@ pub fn misma_con_otra_ficha(db: &dyn Almacen, token_hash: &str, s: &Sesion) -> N
     }
 }
 
-/// Segundos que le quedan a la cookie: hasta el máximo de la sesión.
-pub fn max_edad(n: &NuevaSesion) -> i64 {
-    (n.maximo - ahora()).max(60)
+/// Segundos que le quedan a la cookie: hasta el máximo de la sesión. Sin
+/// «Recordar», `None`: una cookie de sesión, que se va al cerrar el navegador.
+pub fn max_edad(n: &NuevaSesion) -> Option<i64> {
+    n.recordar.then(|| (n.maximo - ahora()).max(60))
 }
 /// Peticiones de una cuenta (con sesión completa) por minuto.
 pub const MAX_PETICIONES_CUENTA_MIN: u32 = 1_200;
@@ -349,18 +350,20 @@ pub fn codigos_recuperacion() -> (Vec<String>, Vec<String>) {
 
 // ---------- Cookies ----------
 
-/// La cookie dura hasta el máximo de la sesión: la base de datos decide cuánto
-/// vale de verdad (10 min a medias, sin el TOTP; caduca antes si no se usa).
-pub fn cookie_sesion(st: &St, ficha: &str, max_edad_s: i64) -> String {
+/// La cookie dura hasta el máximo de la sesión (sin `Max-Age`, hasta cerrar el
+/// navegador): la base de datos decide cuánto vale de verdad (10 min a medias,
+/// sin el TOTP; caduca antes si no se usa).
+pub fn cookie_sesion(st: &St, ficha: &str, max_edad_s: Option<i64>) -> String {
     format!(
-        "{}={ficha}; Path=/; HttpOnly; SameSite=Strict; Max-Age={max_edad_s}{}",
+        "{}={ficha}; Path=/; HttpOnly; SameSite=Strict{}{}",
         nombre_cookie(&st.identidad_pub, st.opciones.https),
+        max_edad_s.map(|s| format!("; Max-Age={s}")).unwrap_or_default(),
         if st.opciones.https { "; Secure" } else { "" }
     )
 }
 
 pub fn cookie_borrar(st: &St) -> String {
-    cookie_sesion(st, "", 0)
+    cookie_sesion(st, "", Some(0))
 }
 
 /// Una sesión completa nueva para la cuenta (al terminar de entrar o al cambiar
@@ -474,7 +477,7 @@ impl Usuario {
                     axum::http::StatusCode::FORBIDDEN,
                     "sesion_nueva",
                     format!(
-                        "Esta sesión es nueva: por seguridad, durante sus primeras 24 horas no puede cerrar otras sesiones ni cambiar la contraseña, el segundo paso o las llaves de acceso. Podrás en unas {} h, o ahora desde un dispositivo donde ya tenías la sesión abierta.",
+                        "Esta sesión es nueva: por seguridad, durante sus primeras 24 horas no puede cerrar otras sesiones, cambiar la contraseña, el segundo paso o las llaves de acceso, restablecer el segundo paso de otros ni cambiar los plazos de las sesiones. Podrás en unas {} h, o ahora desde un dispositivo donde ya tenías la sesión abierta.",
                         horas.max(1)
                     ),
                 )

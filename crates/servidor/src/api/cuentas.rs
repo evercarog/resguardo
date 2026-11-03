@@ -641,6 +641,8 @@ pub async fn restablecer_totp(
     if !su && rol != Rol::Propietario {
         return Err(ErrorApi::prohibido());
     }
+    // Quita más que cerrar una sesión de otro: una sesión nueva tampoco puede (16k).
+    u.sesion_asentada(&st).await?;
     if cuenta == u.id() {
         return Err(ErrorApi::datos("La tuya se cambia en «Mi cuenta» (o, sin el móvil, con un código de recuperación)."));
     }

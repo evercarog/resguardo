@@ -81,6 +81,10 @@ pub async fn respuestas(req: Request, next: Next) -> Response {
     if !toca || !json || res.status() != StatusCode::OK || res.headers().contains_key(header::CONTENT_ENCODING) {
         return res;
     }
+    // Una respuesta que pasa del tope va tal cual (leerla entera daría error).
+    if axum::body::HttpBody::size_hint(res.body()).upper().is_none_or(|n| n > MAX_BYTES as u64) {
+        return res;
+    }
     let (mut partes, cuerpo) = res.into_parts();
     let Ok(bytes): Result<Bytes, _> = axum::body::to_bytes(cuerpo, MAX_BYTES).await else {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();

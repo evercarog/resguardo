@@ -172,6 +172,8 @@ pub async fn poner_plazos(State(st): State<St>, u: Usuario, Json(p): Json<Plazos
     if !u.0.cuenta.superusuario {
         return Err(ErrorApi::prohibido());
     }
+    // Alarga las sesiones de todos: no desde una sesión recién abierta (16k).
+    u.sesion_asentada(&st).await?;
     let p = p.con_topes();
     let valor = serde_json::to_string(&p).map_err(ErrorApi::interno)?;
     let (actor, id) = (format!("cuenta:{}", u.0.cuenta.correo), u.id().to_string());
@@ -255,8 +257,8 @@ mod pruebas {
         let secreto = r.json["totp"]["secreto"].as_str().unwrap().to_string();
         let r = pedir(&app, "POST", "/api/sesion/totp", Some(json!({ "codigo": totp(&secreto, -1) })), r.cookie.as_deref()).await;
         assert_eq!(r.estado, StatusCode::OK);
-        // Sin «Recordar»: la cookie, como mucho 24 h.
-        assert!((max_age(&r.set_cookie) - 24 * 3600).abs() < 120, "{}", r.set_cookie);
+        // Sin «Recordar»: una cookie de sesión, que se va al cerrar el navegador.
+        assert_eq!(max_age(&r.set_cookie), -1, "{}", r.set_cookie);
         let a = r.cookie.unwrap();
 
         // Cuenta recién creada: su primera sesión puede todo (no hay sesiones antiguas que proteger).
