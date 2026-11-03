@@ -17,6 +17,13 @@ export const ultimos = $state<{ cliente: string; porEquipo: Record<string, Infor
 let cargando = "";
 /** Con un servidor anterior (sin `GET …/informes`): uno por equipo, y los que ya se pidieron. */
 let porEquipo: { cliente: string; pedidos: Set<string> } | null = null;
+/**
+ * El cliente cuya carga entera está en marcha (y si mientras tanto se pidió ponerlos al día):
+ * una recarga sin `desde` sería otra descarga entera que podría pisar lo más nuevo, así que se
+ * deja para cuando termine la primera.
+ */
+let enCurso = "";
+let recargarAlTerminar = false;
 /** Cuándo se pidieron por última vez (para ponerlos al día al volver al cliente). */
 let pedidosEn = 0;
 /** Al volver a una pantalla del cliente, si hace más que esto: solo los nuevos. */
@@ -31,6 +38,10 @@ function juntar(xs: (Informe & { equipo: string })[], base: Record<string, Infor
 /** Vuelve a pedir los últimos informes del cliente (ya cargados): algo cambió. Solo los nuevos. */
 export async function recargarInformes(cliente: string) {
   if (!cliente || ultimos.cliente !== cliente || porEquipo?.cliente === cliente) return;
+  if (enCurso === cliente) {
+    recargarAlTerminar = true;
+    return;
+  }
   pedidosEn = Date.now();
   try {
     const xs = await api.ultimosInformes(cliente, desdeInformes(ultimos.porEquipo));
@@ -54,16 +65,27 @@ export async function cargarInformes(cliente: string, equipos: string[]) {
   if (ultimos.cliente !== cliente) ultimos.porEquipo = {};
   ultimos.cliente = cliente;
   porEquipo = null;
+  enCurso = cliente;
+  recargarAlTerminar = false;
   try {
     const xs = await api.ultimosInformes(cliente);
     if (ultimos.cliente === cliente) ultimos.porEquipo = juntar(xs, {});
   } catch (err) {
     if (!(err instanceof api.ApiError && err.estado === 404)) {
-      cargando = "";
+      // Solo si sigue siendo el de este cliente: si ya se cambió a otro, la carga es de ese.
+      if (cargando === cliente) cargando = "";
       return;
     }
+    if (cargando !== cliente) return;
     porEquipo = { cliente, pedidos: new Set() };
     pedirUnoAUno(cliente, equipos);
+  } finally {
+    if (enCurso === cliente) {
+      enCurso = "";
+      const otra = recargarAlTerminar;
+      recargarAlTerminar = false;
+      if (otra && cargando === cliente) void recargarInformes(cliente);
+    }
   }
 }
 
