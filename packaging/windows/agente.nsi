@@ -414,6 +414,13 @@ Section "Resguardo Agente" SecMain
     Abort
   ${EndIf}
 
+  ; El Servidor de copias otra vez en marcha (si estaba activado), antes de la comprobación:
+  ; si la comprobación para el instalador, los demás equipos siguen pudiendo guardar sus copias.
+  ${If} $CopyServer == 0
+    nsExec::Exec '"$SYSDIR\schtasks.exe" /Run /TN "${SERVER_TASK}"'
+    Pop $0
+  ${EndIf}
+
   ; 16z: ¿sigue ahí? Un antivirus puede poner el programa en cuarentena nada más instalarlo
   ; (quita el .exe y el servicio). Si pasa, se dice aquí en vez de dejar un equipo mudo.
   ; Códigos de salida (los lee el actualizador, crates/agente/src/actualizacion.rs): 6 si el
@@ -433,12 +440,6 @@ Section "Resguardo Agente" SecMain
     MessageBox MB_ICONSTOP "El servicio de Resguardo Agente está instalado pero no arranca.$\r$\n$\r$\nSi tienes un antivirus, mira su cuarentena: puede haberlo bloqueado (ayuda de Resguardo: «El antivirus lo bloqueó»). Si no, reinicia el equipo y vuelve a abrir el instalador; el motivo queda en el registro del agente ($APPDATA\ResguardoAgente\agent.log)." /SD IDOK
     SetErrorLevel 7
     Abort
-  ${EndIf}
-
-  ; El Servidor de copias otra vez en marcha (si estaba activado).
-  ${If} $CopyServer == 0
-    nsExec::Exec '"$SYSDIR\schtasks.exe" /Run /TN "${SERVER_TASK}"'
-    Pop $0
   ${EndIf}
 
   ; 15o: la carpeta del programa en el PATH del sistema, para que «resguardo-agente …» funcione
@@ -667,6 +668,12 @@ Function ComprobarInstalado
       ${Break}
     ${EndIf}
     StrCpy $2 "parado"
+    ; Parado en la primera vuelta (quedó a medio parar o no arrancó al instalarlo): se
+    ; arranca una vez a mano; si ya estaba arrancando, sc lo dice (1056) y no pasa nada.
+    ${If} $3 == 1
+      nsExec::Exec '"$SYSDIR\sc.exe" start ${SERVICE}'
+      Pop $1
+    ${EndIf}
   ${LoopUntil} $3 >= 5
   StrCpy $0 $2
   Pop $3

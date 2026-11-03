@@ -1043,6 +1043,10 @@ pub const MOTIVO_QUITADO: &str = "Windows o el antivirus quitó o bloqueó Resgu
 /// servicio ya no están (`packaging/windows/agente.nsi`, `ComprobarInstalado`).
 pub const SALIDA_QUITADO: i32 = 6;
 
+/// 16z: el servicio está instalado pero no arranca (código 7 del instalador de Windows).
+pub const MOTIVO_PARADO: &str = "El servicio de Resguardo Agente se instaló pero no arranca. Si hay un antivirus, mira su cuarentena (ayuda «El antivirus lo bloqueó»); si no, el motivo queda en el registro del agente.";
+pub const SALIDA_PARADO: i32 = 7;
+
 /// Cada cuánto mira la salud.
 const PASO_SALUD: Duration = Duration::from_secs(5);
 
@@ -1187,6 +1191,9 @@ impl Plataforma for Real {
         if estado.code() == Some(SALIDA_QUITADO) {
             return Err(MOTIVO_QUITADO.into());
         }
+        if estado.code() == Some(SALIDA_PARADO) {
+            return Err(MOTIVO_PARADO.into());
+        }
         if !estado.success() {
             return Err(format!("El instalador terminó con el código {}.", estado.code().unwrap_or(-1)));
         }
@@ -1249,11 +1256,31 @@ impl Plataforma for Real {
                 .status()
                 .map_err(|e| format!("No se pudo volver a instalar el servicio: {e}"))?;
         }
+        // El Servidor de copias otra vez en marcha si este equipo guarda copias (el
+        // instalador que falló pudo dejarlo parado).
+        let tarea = crate::server::TASK_NAME_AGENTE;
+        if sistema("schtasks.exe", &["/Query", "/TN", tarea]).is_ok_and(|s| s.success()) {
+            let _ = sistema("schtasks.exe", &["/Run", "/TN", tarea]);
+        }
         // 1056: ya estaba en marcha.
         if !r.success() && r.code() != Some(1056) {
             return Err(format!("No se pudo arrancar el servicio (código {}).", r.code().unwrap_or(-1)));
         }
-        Ok(())
+        // Que arrancó de verdad (`--install-service` no dice si el arranque falló).
+        for _ in 0..10 {
+            let salida = std::process::Command::new(PathBuf::from(crate::platform::system_dir()).join("sc.exe"))
+                .args(["query", crate::agente::SERVICE_NAME])
+                .stdin(std::process::Stdio::null())
+                .creation_flags(0x0800_0000)
+                .output()
+                .map_err(|e| e.to_string())?;
+            // El nombre del estado (RUNNING) no se traduce en sc.exe.
+            if String::from_utf8_lossy(&salida.stdout).contains("RUNNING") {
+                return Ok(());
+            }
+            std::thread::sleep(Duration::from_secs(2));
+        }
+        Err("El programa anterior está en su sitio, pero su servicio no arranca.".into())
     }
 }
 
