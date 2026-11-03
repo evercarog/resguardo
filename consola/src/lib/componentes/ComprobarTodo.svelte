@@ -17,7 +17,7 @@
   import type { ReglaCopia } from "$lib/regla321";
   import { nombreArchivo } from "$lib/csv";
   import { bajar } from "$lib/informeConfigCargar";
-  import { plural, relativo } from "$lib/formato";
+  import { lista, plural, relativo } from "$lib/formato";
   import type { Cliente, Equipo, Orden } from "$lib/tipos";
   import OrdenDialog from "./OrdenDialog.svelte";
 
@@ -47,6 +47,16 @@
   const n = $derived(cuentas(filas.filter((f) => f.c.orden).map((f) => f.r)));
   const kits = $derived(kitsDe(equipos.map((e) => equipoAhora(e.id) ?? e)));
   const kitsPendientes = $derived(kits.filter((k) => k.admite && k.resultado !== "abre"));
+  /**
+   * Con muchos equipos sin actualizar, una línea por repositorio («Actualiza Resguardo en…»)
+   * llenaba la lista: más de 3 se resumen en una sola línea con los equipos.
+   */
+  const MAX_SIN_SOPORTE = 3;
+  const kitsViejos = $derived(kits.filter((k) => !k.admite && !k.resultado));
+  const resumirViejos = $derived(kitsViejos.length > MAX_SIN_SOPORTE);
+  const kitsALista = $derived(resumirViejos ? kits.filter((k) => k.admite || k.resultado) : kits);
+  const equiposViejos = $derived([...new Set(kitsViejos.map((k) => k.equipo.nombre))]);
+  const nombresViejos = $derived(equiposViejos.length > 4 ? `${equiposViejos.slice(0, 4).join(", ")} y ${equiposViejos.length - 4} más` : lista(equiposViejos));
   let kit = $state<{ equipo: Equipo; repo: { id: string; nombre: string } } | null>(null);
 
   async function comprobar() {
@@ -183,8 +193,11 @@
         {:else if kitsPendientes.length}{plural(kitsPendientes.length, "kit", "kits")} sin comprobar o que no abrieron la última vez. Escribe la contraseña de cada uno: el equipo prueba que abre el repositorio y no la guarda.
         {:else}Todos los kits que se pueden comprobar desde aquí abrieron su repositorio la última vez.{/if}
       </p>
+      {#if resumirViejos && kits.some((k) => k.admite)}
+        <p class="faint">{plural(kitsViejos.length, "repositorio", "repositorios")} de {plural(equiposViejos.length, "equipo", "equipos")} no se {kitsViejos.length === 1 ? "puede" : "pueden"} comprobar desde aquí: actualiza Resguardo en {nombresViejos}.</p>
+      {/if}
       <ul class="lista-c">
-        {#each kits as k (`${k.equipo.id}|${k.repo.id}`)}
+        {#each kitsALista as k (`${k.equipo.id}|${k.repo.id}`)}
           <li>
             <span class="ic tone-{k.resultado === 'abre' ? 'ok' : k.resultado ? 'bad' : 'neutral'}">{#if k.resultado === "abre"}<Check size={15} />{:else if k.resultado}<CircleAlert size={15} />{:else}<Minus size={15} />{/if}</span>
             <span class="nombre">{k.equipo.nombre} · {k.repo.nombre}</span>
