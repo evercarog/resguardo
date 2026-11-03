@@ -119,11 +119,12 @@
   };
   const info = (a: Aviso) => INFO[a.tipo] ?? { texto: a.tipo, tono: "neutral" as Tono, icono: CircleAlert, que: "", accion: () => null };
   const equipo = (id: string | null) => actual.equipos.find((e) => e.id === id);
-  // Con etiquetas elegidas (las mismas que en Equipos y Estado), solo los avisos de sus equipos
-  // (los del cliente en general, no).
+  // Con etiquetas elegidas (las mismas que en Equipos y Estado), solo los avisos de sus equipos.
+  // Los del cliente en general (sin equipo: intentos fallidos, la clave de administración
+  // cambiada…) se ven siempre: una etiqueta no debe esconderlos.
   const visibles = $derived.by(() => {
     const f = filtrosEquipos.valor;
-    return (avisos ?? []).filter((a) => !f.etiquetas.length || pasaEtiquetas(equipo(a.equipo), f.etiquetas, f.modo));
+    return (avisos ?? []).filter((a) => !a.equipo || !f.etiquetas.length || pasaEtiquetas(equipo(a.equipo), f.etiquetas, f.modo));
   });
   const sinVer = $derived(visibles.filter((a) => !a.visto_por));
   const urgentes = $derived(sinVer.filter((a) => info(a).tono === "bad").length);

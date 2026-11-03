@@ -49,6 +49,12 @@
     ponerIcono(avisos ? "aviso" : actual.id && todasEnMarcha().length ? "marcha" : "normal");
   });
   onMount(() => () => ponerIcono("normal"));
+  // 16r: con la barra de abajo del móvil, los avisos breves (Toaster, fuera de este diseño) suben
+  // por encima de ella: se marca en <html>, que el Toaster sí ve.
+  $effect(() => {
+    document.documentElement.classList.toggle("con-barra-movil", enCliente);
+  });
+  onMount(() => () => document.documentElement.classList.remove("con-barra-movil"));
   // Al cambiar de pantalla, el foco va al contenido (lectores de pantalla y teclado).
   afterNavigate(({ type }) => {
     // 16l: lo que la pantalla nueva pide al llegar es de primer plano (la barra de arriba).
